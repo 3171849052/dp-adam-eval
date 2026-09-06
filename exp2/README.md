@@ -64,6 +64,25 @@ DataLoader 传独立 generator；训练固定 num_workers=0，避免 worker 在 
 - `clipped_aggregate_norm` 是 clipped **mean** 的范数；`actual_noise_norm` 由上游 noisy mean 减保留的 clipped mean 重建（受 FP32 舍入影响）；`expected_noise_norm=(sigma*C/B)*sqrt(d)` 是噪声范数的 RMS 近似，二者单独记录。
 - `noisy_update_norm` 是 noisy mean 的范数，`update_norm=lr*noisy_update_norm`；SNR 为 clipped mean norm / (expected noise norm + eps)。
 
+新增四个字段直接写入既有 `train_metrics_<method>.csv` 和联合 `train_metrics.csv`，不新建 CSV：
+
+- `coefficient_std = std(c_i, unbiased=False)`，使用 population std；`coefficient_cv = coefficient_std / (mean(c_i) + eps_num)`，衡量 sample-wise clipping heterogeneity。系数仍直接来自上游 `_compute_clip_factors`。
+- `clipping_alpha_star = <mu_clip, mu_raw> / (||mu_raw||² + eps_num)`。
+- `clipping_shape_error = ||mu_clip - clipping_alpha_star * mu_raw|| / (||mu_clip|| + eps_num)`，衡量去除最佳 global scalar 后的 aggregate distortion。跨四层完整 aggregate 拟合一个 scalar，inner product、norm 和直接 residual 平方和均以 float64 累加，eps_num 避免零或极小 aggregate 导致 inf/NaN。
+
+100% clip rate 本身不代表 clipping direction bias：如果所有样本近似乘同一个 scalar，aggregate direction 可以保持，此时 aggregate_cosine 约为 1、clipping_shape_error 约为 0，而 relative_distortion 仍可能很大。固定 eps_num 在极小 aggregate 时会影响 scalar 拟合，这时指标应谨慎解释。判断 SynDiag 是否改善 clipping geometry，应结合 aggregate_cosine、clipping_shape_error、coefficient_cv 与 layer contribution，不能仅看 clip_rate 或 relative_distortion。
+
+`02_clipping.png` 保留 clip_rate、norm_q50、coefficient_q50 并增加 coefficient_cv；`03_distortion.png` 保留原有两项并增加 clipping_shape_error。绘图 validation 要求四个新字段全部 finite。新增确定性测试覆盖纯 scalar clipping、异质/相同系数、跨层 global scalar 对照，以及零、极小和相互抵消的 aggregate。
+
+诊断扩展使用全新的 smoke 目录，`smoke_clipshape.json` 相对原 smoke 配置只修改 output；不覆盖已有 `runs/smoke`：
+
+```bash
+conda run -n curve --no-capture-output python -m unittest discover -s exp2/tests -v
+conda run -n curve --no-capture-output python exp2/train_exp2.py --config exp2/configs/smoke_clipshape.json --method dp_sgd
+conda run -n curve --no-capture-output python exp2/train_exp2.py --config exp2/configs/smoke_clipshape.json --method syn_diag
+conda run -n curve --no-capture-output python exp2/plot_exp2.py --config exp2/configs/smoke_clipshape.json
+```
+
 `refresh_metrics.csv` 每层每次 refresh 一行：v/sqrt(v)/P 的 Q1/Q5/Q50/Q95/Q99、lambda/median(sqrt(v))、fraction(sqrt(v)<lambda)。median 为零时比例为空，fraction 仍可读；不因此调整 lambda。
 
 probes 随机均分两组（奇数时相差一个），分别按实际组大小平均。`z=log(v+eps)-mean(log(v+eps))`；D_sample 为两组 z 差的 RMS；D_time 为当前与上次 refresh z 差的 RMS，首次为空。`D_sample << D_time` 支持无须 EMA；相近时才为后续 EMA/增大 M 提供证据，本实验不改训练。
@@ -87,3 +106,5 @@ probes 随机均分两组（奇数时相差一个），分别按实际组大小�
 观察到的异常/限制：两方法 clip rate 均为 100%；SynDiag 的各 batch norm 中位数均值约 1.10e8、coefficient 中位数均值约 9.45e-9，relative distortion 接近 1。首次 fc1 有约 34.3% synthetic 坐标的 sqrt(v)<lambda；8 个 probes 的零/稀疏统计导致这些坐标的 P 达到 1e8。conv1 第二次 refresh 的 stale_ratio 约 1.03e6，需结合接近零的 A_new 解读。这些是极小 smoke 设置下的诊断，不足以决定 EMA、K 或完整实验性能；未据此调整参数。
 
 运行出现上游 RDP “optimal order is largest alpha” 和 PyTorch full backward hook 提示，未导致失败；逐样本梯度已通过单例 autograd 数值对照。完整 5-epoch 实验未启动。
+
+Clipping shape 扩展验证：8 项 unit tests 全部通过；`runs/smoke_clipshape` 的两个方法各完成 4 updates、2 refresh，三个 train CSV 的四个新增字段全部 finite，9 张图及原有 validation 通过。与原 smoke 对照，两方法的最终模型 hash、RNG pairing 和上游源码 hash 完全一致。未覆盖原 smoke，也未启动完整实验。

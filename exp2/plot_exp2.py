@@ -19,6 +19,7 @@ def plot(c):
         train = tables['train'].query('method == @method')
         assert train.step.tolist() == list(range(1, summary[method]['total_steps']+1))
         required = ['train_loss', 'clip_rate', 'norm_q50', 'coefficient_q50', 'relative_distortion',
+                    'coefficient_std', 'coefficient_cv', 'clipping_alpha_star', 'clipping_shape_error',
                     'actual_noise_norm', 'expected_noise_norm', 'update_norm', 'wall_seconds']
         assert np.isfinite(train[required].to_numpy()).all()
         assert (train.actual_noise_norm > 0).all() and (train.update_norm > 0).all()
@@ -55,8 +56,8 @@ def plot(c):
         plt.close(fig)
 
     figure('01_accuracy_loss', 'train', ['test_accuracy', 'test_loss', 'train_loss'])
-    figure('02_clipping', 'train', ['clip_rate', 'norm_q50', 'coefficient_q50'])
-    figure('03_distortion', 'train', ['aggregate_cosine', 'relative_distortion'])
+    figure('02_clipping', 'train', ['clip_rate', 'norm_q50', 'coefficient_q50', 'coefficient_cv'])
+    figure('03_distortion', 'train', ['aggregate_cosine', 'relative_distortion', 'clipping_shape_error'])
     figure('04_layer_contribution', 'train', [f'contrib_{n}' for n in LAYERS])
     figure('05_oracle_alignment', 'oracle', ['R', 'log_pearson'], layers=True)
     # One axis per layer puts sample variability and temporal drift on the same scale.

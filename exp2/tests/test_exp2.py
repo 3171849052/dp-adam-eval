@@ -17,6 +17,7 @@ from common import (SimpleCNN, LAYERS, RNGStream, layer_gradient, read_config, d
 from synthetic_preconditioner import apply_p, parameter_p, make_p, synthetic, estimate
 from diagnostics import refresh_rows, oracle_rows
 from dp_kfac.privacy import DPGradientAccumulator
+from metrics import before_clip
 import train_exp2 as training
 
 
@@ -24,6 +25,60 @@ class Exp2Tests(unittest.TestCase):
     def setUp(self):
         self.c = read_config(ROOT / 'configs/smoke.json')
         torch.manual_seed(123)
+
+    def toy_metrics(self, gradients):
+        """Eight explicit coordinates: weight/bias for each of four layers; no RNG."""
+        g = torch.tensor(gradients, dtype=torch.float64)
+        model = torch.nn.Module()
+        model._module = torch.nn.Module()
+        for i, name in enumerate(LAYERS):
+            layer = torch.nn.Module()
+            layer.weight = torch.nn.Parameter(torch.zeros(1, 1, dtype=torch.float64))
+            layer.bias = torch.nn.Parameter(torch.zeros(1, dtype=torch.float64))
+            layer.weight.grad_sample = g[:, 2*i].reshape(-1, 1, 1).clone()
+            layer.bias.grad_sample = g[:, 2*i+1].reshape(-1, 1).clone()
+            model._module.add_module(name, layer)
+        return before_clip(model, self.c, len(g))
+
+    def test_pure_scalar_clipping_preserves_shape(self):
+        row = self.toy_metrics([[3, 0, 4, 0, 0, 0, 0, 0]] * 2)
+        self.assertEqual(row['clip_rate'], 1.)
+        self.assertAlmostEqual(row['aggregate_cosine'], 1., places=12)
+        self.assertLess(row['clipping_shape_error'], 1e-12)
+        self.assertGreater(row['relative_distortion'], .7)
+        # Upstream accumulates norms in FP32 even for float64 grad_sample.
+        expected_coeff = float(1/(torch.tensor(5., dtype=torch.float32)+1e-6))
+        self.assertAlmostEqual(row['clipping_alpha_star'], expected_coeff, places=12)
+        self.assertAlmostEqual(row['coefficient_cv'], 0., places=12)
+
+    def test_heterogeneous_clipping_and_global_shape_reference(self):
+        # Different layers contain orthogonal samples; per-layer fitting would
+        # incorrectly report zero shape error instead of the global residual.
+        g = torch.tensor([[10, 0, 0, 0, 0, 0, 0, 0],
+                          [0, 0, 1, 0, 0, 0, 0, 0]], dtype=torch.float64)
+        row = self.toy_metrics(g.tolist())
+        coeff = (1/(g.float().norm(dim=1)+1e-6)).clamp(max=1).double()
+        std = float(coeff.std(unbiased=False))
+        self.assertGreater(row['coefficient_std'], 0.)
+        self.assertGreater(row['coefficient_cv'], 0.)
+        self.assertAlmostEqual(row['coefficient_std'], std, places=12)
+        self.assertAlmostEqual(row['coefficient_cv'], std/(float(coeff.mean())+self.c['eps_num']), places=12)
+        raw, clipped = g.mean(0), (g*coeff[:, None]).mean(0)
+        alpha = float(torch.dot(clipped, raw)/(raw.square().sum()+self.c['eps_num']))
+        error = float((clipped-alpha*raw).norm()/(clipped.norm()+self.c['eps_num']))
+        self.assertAlmostEqual(row['clipping_alpha_star'], alpha, places=12)
+        self.assertAlmostEqual(row['clipping_shape_error'], error, places=12)
+        self.assertGreater(error, .5)
+        equal = self.toy_metrics([[10, 0, 0, 0, 0, 0, 0, 0]] * 2)
+        self.assertAlmostEqual(equal['coefficient_std'], 0., places=12)
+        self.assertAlmostEqual(equal['coefficient_cv'], 0., places=12)
+
+    def test_new_clipping_metrics_finite_for_zero_and_tiny_aggregates(self):
+        for gradients in ([[0]*8], [[1e-20]*8], [[2]*8, [-2]*8]):
+            with self.subTest(gradients=gradients):
+                row = self.toy_metrics(gradients)
+                for key in ('coefficient_std', 'coefficient_cv', 'clipping_alpha_star', 'clipping_shape_error'):
+                    self.assertTrue(np.isfinite(row[key]), key)
 
     def test_exp1_layout_round_trip_and_grad_sample_order(self):
         model = GradSampleModule(SimpleCNN(), loss_reduction='sum')
