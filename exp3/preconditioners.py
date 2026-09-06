@@ -22,12 +22,15 @@ def diagnostic_model(state, dev):
             model.remove_hooks()
 
 
-def synthetic_samples(c, dev, rng):
+def synthetic_samples(c, dev, rng, *, budget=None):
+    budget = c["M_syn"] if budget is None else budget
     before = rng.audit()
     with rng.use():
-        batches = [(generate_pink_noise(c["batch_size"], (1, 28, 28), dev),
-                    torch.randint(0, 10, (c["batch_size"],), device=dev))
-                   for _ in range(c["M_syn"] // c["batch_size"])]
+        batches = []
+        for start in range(0, budget, c["batch_size"]):
+            b = min(c["batch_size"], budget-start)
+            batches.append((generate_pink_noise(b, (1, 28, 28), dev),
+                            torch.randint(0, 10, (b,), device=dev)))
     x, y = (torch.cat([b[j] for b in batches]) for j in (0, 1))
     return (x, y), dict(rng_before=before, rng_after=rng.audit(), samples_hash=digest([x]), labels_hash=digest([y]), count=len(y))
 
@@ -62,7 +65,7 @@ def apply(model, active):
         raise ValueError(kind)
 
 
-def refresh(state, samples, c, dev, method):
+def refresh(state, samples, c, dev, method, *, return_covariances=False):
     x, y = samples
     with diagnostic_model(state, dev) as model:
         if method == "syn_diag":
@@ -86,11 +89,14 @@ def refresh(state, samples, c, dev, method):
             for start in range(0, len(x), c["batch_size"]):
                 model.zero_grad(set_to_none=True)
                 F.cross_entropy(model(x[start:start+c["batch_size"]].to(dev)),
-                                y[start:start+c["batch_size"]].to(dev), reduction="sum").backward()
+                                y[start:start+c["batch_size"]].to(dev)).backward()
+                # MEAN loss is the upstream recorder convention. Do not rescale
+                # backprops or conflate covariance ridge with root damping.
                 # Equal 256-sample microbatches; retain upstream covariance ridge.
                 factors.append(compute_covariances(model, recorder.activations, recorder.backprops))
                 recorder.clear()
             cov = accumulate_covariances(factors)
-            return method, compute_inverse_sqrt(cov, damping=c["damping"])
+            active = method, compute_inverse_sqrt(cov, damping=c["damping"])
+            return (active, cov) if return_covariances else active
         finally:
             recorder.remove()

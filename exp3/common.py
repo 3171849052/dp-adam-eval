@@ -16,13 +16,14 @@ from dp_kfac.models import SimpleCNN
 from dp_kfac.data import get_mnist_loaders
 from dp_kfac.optimizer import generate_pink_noise
 from dp_kfac.trainer import set_seed
+from exp3.audit_upstream import checkout_info
 
 LAYERS = ("conv1", "conv2", "fc1", "fc2")
 METHODS = ("dp_sgd", "syn_diag", "dp_kfc")
 DEFAULT = dict(dataset="MNIST", model="SimpleCNN", seeds=[42, 7, 91], epochs=5,
                batch_size=256, epsilon=1.0, delta=1e-5, max_grad_norm=1.0,
                optimizer="SGD", learning_rate=0.1, momentum=0, M_oracle=512,
-               K=50, M_syn=2560, damping=1e-3, **{"lambda": 1e-3},
+               K=50, M_syn=2560, M_stale=512, stale_seed_offset=100003, damping=1e-3, **{"lambda": 1e-3},
                device="auto", threads=4, analysis_batch_size=32,
                eval_interval=100, eps_num=1e-12, gram_chunk=2048,
                oracle_seed=314159, oracle_enabled=True,
@@ -35,11 +36,11 @@ def read_config(path):
         raise ValueError("Config must have exactly the documented keys")
     flexible = {"device", "threads", "analysis_batch_size", "eval_interval", "gram_chunk"}
     if c["smoke"]:
-        flexible |= {"smoke", "seeds", "epochs", "batch_size", "K", "M_syn", "M_oracle", "train_subset", "test_subset"}
+        flexible |= {"smoke", "seeds", "epochs", "batch_size", "K", "M_syn", "M_stale", "M_oracle", "train_subset", "test_subset"}
     for k in set(DEFAULT) - flexible:
         if c[k] != DEFAULT[k]:
             raise ValueError(f"Fixed protocol mismatch: {k}")
-    for k in ("epochs", "batch_size", "K", "M_syn", "M_oracle", "threads", "analysis_batch_size", "eval_interval", "gram_chunk"):
+    for k in ("epochs", "batch_size", "K", "M_syn", "M_stale", "M_oracle", "threads", "analysis_batch_size", "eval_interval", "gram_chunk"):
         if type(c[k]) is not int or c[k] < 1:
             raise ValueError(f"Invalid positive integer: {k}")
     if not c["seeds"] or len(set(c["seeds"])) != len(c["seeds"]):
@@ -62,9 +63,10 @@ def digest(tensors):
 
 
 def provenance():
-    files = ["models", "data", "optimizer", "privacy", "covariance", "recorder", "precondition"]
-    result = {f"upstream/{n}.py": hashlib.sha256((REPO / f"src/dp_kfac/{n}.py").read_bytes()).hexdigest() for n in files}
+    # Include transitive imports too, not just the directly called KFAC functions.
+    result = {f"upstream/{p.name}": hashlib.sha256(p.read_bytes()).hexdigest() for p in (REPO / "src/dp_kfac").glob("*.py")}
     result.update({f"exp3/{p.name}": hashlib.sha256(p.read_bytes()).hexdigest() for p in ROOT.glob("*.py")})
+    result.update(checkout_info())
     return result
 
 

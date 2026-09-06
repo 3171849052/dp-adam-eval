@@ -23,8 +23,9 @@ def plot(root, c, output):
         fig.tight_layout()
         fig.savefig(figures / f"{name}.png", dpi=160)
         plt.close(fig)
-    for metric, filename in [("test_accuracy", "01_test_accuracy"), ("G_diag", "02_G_diag"), ("G_full", "03_G_full"),
-                             ("delta_stale_diag", "09_staleness_diag"), ("delta_stale_full", "10_staleness_full")]:
+    for metric, filename in [("test_accuracy", "01_test_accuracy"), ("G_diag_new", "02_G_diag_new"), ("G_full_new", "03_G_full_new"),
+                             ("G_diag_old", "04_G_diag_old"), ("G_full_old", "05_G_full_old"),
+                             ("delta_stale_diag", "11_staleness_diag"), ("delta_stale_full", "12_staleness_full")]:
         is_stale = metric.startswith("delta")
         fig, axes = plt.subplots(2, 2, figsize=(10, 7)) if is_stale else plt.subplots(figsize=(7, 4))
         axes = np.atleast_1d(axes).ravel()
@@ -38,7 +39,8 @@ def plot(root, c, output):
                         series = frames["train"].set_index("step")[metric].dropna()
                     elif metric.startswith("G_"):
                         frame = frames["oracle"]
-                        series = frame.groupby("step")[metric.replace("G_", "R_")].agg(lambda v: geometric_mean(v))
+                        column = metric.replace("G_", "R_")
+                        series = frame.dropna(subset=[column]).groupby("step")[column].agg(lambda v: geometric_mean(v))
                     else:
                         frame = frames["refresh"]
                         if frame.empty:
@@ -58,10 +60,11 @@ def plot(root, c, output):
             ax.legend(fontsize=8)
             ax.grid(alpha=.15)
         save(fig, filename)
-    for metric, filename in [("late_norm_cv", "04_norm_cv"), ("late_coefficient_cv", "05_coefficient_cv"),
-                             ("late_shape_error", "06_shape_error"), ("late_aggregate_cosine", "07_aggregate_cosine"),
-                             ("late_snr", "08_snr"), ("mean_refresh_time", "11_refresh_time"),
-                             ("preconditioner_state_bytes", "12_preconditioner_memory")]:
+    for metric, filename in [("late_norm_cv", "06_norm_cv"), ("late_coefficient_cv", "07_coefficient_cv"),
+                             ("late_shape_error", "08_shape_error"), ("late_aggregate_cosine", "09_aggregate_cosine"),
+                             ("late_snr", "10_snr"), ("mean_refresh_time", "13_refresh_time"),
+                             ("core_wall_time", "14_core_wall_time"), ("preconditioner_state_bytes", "15_preconditioner_memory"),
+                             ("peak_cuda_memory_core", "16_core_peak_memory")]:
         fig, ax = plt.subplots(figsize=(7, 4))
         for i, method in enumerate(METHODS):
             values = summary.loc[summary.method == method, metric].astype(float).dropna().to_numpy()
@@ -74,7 +77,7 @@ def plot(root, c, output):
         ax.set_title("Seed values and mean ± sample SD")
         ax.grid(axis="y", alpha=.15)
         save(fig, filename)
-    print(f"Wrote 12 figures to {figures}")
+    print(f"Wrote 16 figures to {figures}")
 
 
 if __name__ == "__main__":

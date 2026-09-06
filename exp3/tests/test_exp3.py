@@ -33,16 +33,15 @@ def test_syndiag_exact_formula():
 
 def test_precondition_before_clip():
     events = []
-    class Acc:
-        def accumulate(self, *args): events.append("clip")
-        def finalize(self, *args, **kwargs): events.append("noise")
+    def clip_noise(*args, **kwargs):
+        events.extend(["clip", "noise"])
     class Optim:
         def step(self): events.append("sgd")
     model = torch.nn.Linear(1, 1)
     with patch("exp3.train_exp3.apply", side_effect=lambda *a: events.append("kfac")), \
          patch("exp3.train_exp3.before_clip", return_value={"clipped_aggregate_norm": 1}), \
          patch("exp3.train_exp3._compute_per_sample_norms_squared", return_value=torch.ones(2)), \
-         patch("exp3.train_exp3.DPGradientAccumulator", Acc), \
+         patch("exp3.train_exp3.clip_and_noise_gradients", clip_noise), \
          patch("exp3.train_exp3.after_noise", return_value={"expected_noise_norm": 1}):
         private_update(model, ("dp_kfc", ({}, {})), Optim(), RNGStream(42, "cpu"), 1, DEFAULT, 2)
     assert events == ["kfac", "clip", "noise", "sgd"]
@@ -149,6 +148,13 @@ def test_oracle_trajectory_isolation(tmp_path, method):
         return json.loads((tmp_path/part/"seed42"/method/filename).read_text())
     assert read("on","pairing.json") == read("off","pairing.json")
     assert read("on","summary.json")["final_model_hash"] == read("off","summary.json")["final_model_hash"]
+    oracle = pd.read_csv(tmp_path/"on"/"seed42"/method/"oracle_metrics.csv")
+    assert oracle.loc[oracle.step == 0,"R_diag_old"].isna().all()
+    assert np.isfinite(oracle.loc[oracle.step > 0,["R_diag_old","R_full_old"]]).all().all()
+    # The independent diagnostic budget must not change training either.
+    train(dict(c,oracle_enabled=False,M_stale=4),42,method,tmp_path/"small_probe",(data,data))
+    for key in ("private","synthetic"):
+        assert read("on","pairing.json")[key] == read("small_probe","pairing.json")[key]
 
 
 def test_config_rejects_protocol_change(tmp_path):
@@ -159,16 +165,14 @@ def test_config_rejects_protocol_change(tmp_path):
 
 
 def test_kfac_actual_transform_then_global_clip():
-    from dp_kfac.privacy import DPGradientAccumulator
+    from dp_kfac.privacy import clip_and_noise_gradients
     model = torch.nn.Sequential(torch.nn.Linear(1,1))
     model[0].weight.grad_sample = torch.tensor([[[3.]],[[0.]]])
     model[0].bias.grad_sample = torch.tensor([[0.],[4.]])
     apply(model,("dp_kfc",({"0":torch.eye(2)*2},{"0":torch.eye(1)})))
     assert model[0].weight.grad_sample[0,0,0] == 6
     assert model[0].bias.grad_sample[1,0] == 8
-    acc = DPGradientAccumulator()
-    acc.accumulate(model,1.,2)
-    acc.finalize(0.,1.,store_summed_grad=True)
+    clip_and_noise_gradients(model,0.,1.,2,store_summed_grad=True)
     assert model[0].weight.grad.item() == pytest.approx(6/(6+1e-6)/2)
     assert model[0].bias.grad.item() == pytest.approx(8/(8+1e-6)/2)
 

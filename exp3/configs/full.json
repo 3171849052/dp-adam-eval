@@ -29,5 +29,7 @@
   "oracle_enabled": true,
   "train_subset": null,
   "test_subset": null,
-  "smoke": false
+  "smoke": false,
+  "M_stale": 512,
+  "stale_seed_offset": 100003
 }

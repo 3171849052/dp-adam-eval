@@ -67,6 +67,21 @@ def stale(old, new):
                 delta_stale_full=None if old is None else old["S"]-new["S"])
 
 
+def oracle_compare(raw, new, old=None):
+    # Legacy R/A_pre/S_pre columns are exact aliases for fresh/new geometry.
+    row = compare(raw, new)
+    for label, value in (("new", new), ("old", old)):
+        row.update({f"R_diag_{label}": None if value is None else ratio(value["A"], raw["A"]),
+                    f"R_full_{label}": None if value is None else ratio(value["S"], raw["S"]),
+                    f"A_diag_{label}": None if value is None else value["A"],
+                    f"S_full_{label}": None if value is None else value["S"],
+                    f"rank_{label}": None if value is None else value["rank"],
+                    f"eigen_tolerance_{label}": None if value is None else value["eigen_tolerance"]})
+    row.update(private_delta_stale_diag=None if old is None else old["A"]-new["A"],
+               private_delta_stale_full=None if old is None else old["S"]-new["S"])
+    return row
+
+
 def diagnose(state, samples, transforms, c, dev, scratch):
     """Apply all transforms to exactly the same raw gradients, on a separate model.
 

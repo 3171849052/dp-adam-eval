@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from exp3.common import ROOT, METHODS, LAYERS, read_config, fingerprint, write_csv
+from exp3.audit_upstream import require_clean
 
 LATE = {"late_norm_cv": "norm_cv", "late_coefficient_cv": "coefficient_cv",
         "late_aggregate_cosine": "aggregate_cosine", "late_shape_error": "clipping_shape_error", "late_snr": "diagnostic_snr"}
@@ -34,6 +35,10 @@ def load_runs(root, c):
         for method in METHODS:
             path = Path(root) / f"seed{seed}" / method
             meta = json.loads((path / "metadata.json").read_text())
+            require_clean(meta["provenance"], c["smoke"])
+            for key in ("upstream_repo", "upstream_git_commit", "upstream_git_dirty", "upstream_git_remote"):
+                if meta[key] != meta["provenance"][key]:
+                    raise ValueError(f"Inconsistent upstream provenance: {path}/{key}")
             summary = json.loads((path / "summary.json").read_text())
             config = json.loads((path / "config.json").read_text())
             if config != c or meta["fingerprint"] != fingerprint(c) or summary["fingerprint"] != fingerprint(c):
@@ -72,23 +77,25 @@ def paired_deltas(frame, seeds):
 def summarize(root, c, output):
     rows = []
     for path, meta, summary, frames in load_runs(root, c):
-        row = {k: summary[k] for k in ("method", "seed", "mean_refresh_time", "total_refresh_time", "wall_time", "number_of_refreshes",
-               "peak_cuda_memory_allocated", "peak_cuda_memory_reserved", "preconditioner_state_bytes", "final_accuracy", "best_accuracy", "late_mean_accuracy")}
-        row["peak_cuda_memory"] = row["peak_cuda_memory_allocated"]
+        row = {k: summary[k] for k in ("method", "seed", "mean_refresh_time", "total_refresh_time", "wall_time", "core_wall_time", "diagnostic_seconds", "number_of_refreshes",
+               "peak_cuda_memory_core", "peak_cuda_memory_overall", "peak_cuda_memory_allocated", "peak_cuda_memory_reserved", "preconditioner_state_bytes", "final_test_loss", "final_accuracy", "best_accuracy", "late_mean_accuracy")}
+        row["peak_cuda_memory"] = row["peak_cuda_memory_core"]
         total = meta["total_steps"]
         for name, column in LATE.items():
             stats = late_stats(frames["train"], column, total)
             row[name] = stats["median"]
             row.update({f"{name}_{q}": stats[q] for q in ("q25", "q75", "iqr")})
         for category, frame, columns in (
-            ("oracle", frames["oracle"], ["R_diag", "A_diag_raw", "A_diag_pre", "R_full", "S_full_raw", "S_full_pre"]),
+            ("oracle", frames["oracle"], ["R_diag_new", "R_diag_old", "R_full_new", "R_full_old", "A_diag_raw", "A_diag_new", "A_diag_old", "S_full_raw", "S_full_new", "S_full_old", "private_delta_stale_diag", "private_delta_stale_full"]),
             ("refresh", frames["refresh"], ["A_old_diag", "A_new_diag", "delta_stale_diag", "S_old_full", "S_new_full", "delta_stale_full"])):
             for layer in LAYERS:
                 for col in columns:
                     row[f"{category}_{col}_{layer}"] = late_stats(frame[frame.layer == layer], col, total)["median"] if len(frame) else None
         for kind in ("diag", "full"):
-            values = [row[f"oracle_R_{kind}_{layer}"] for layer in LAYERS]
-            row[f"G_{kind}"] = geometric_mean(values) if all(v is not None for v in values) else None
+            for age in ("new", "old"):
+                values = [row[f"oracle_R_{kind}_{age}_{layer}"] for layer in LAYERS]
+                row[f"G_{kind}_{age}"] = geometric_mean(values) if all(v is not None for v in values) else None
+            row[f"G_{kind}"] = row[f"G_{kind}_new"]
         rows.append(row)
     frame = pd.DataFrame(rows)
     means = []
