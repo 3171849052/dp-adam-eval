@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "runs": 9,
+  "steps_per_run": 1170,
+  "smoke": false,
+  "epsilon_spent": 0.995693195331761,
+  "noise_multiplier": 1.068115234375,
+  "oracle_trajectory_isolation": "covered by unit test for all 3 methods",
+  "upstream_git_commit": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
+  "upstream_git_dirty": false,
+  "upstream_origin": "https://github.com/molinamarcvdb/DP-KFC.git",
+  "origin_matches_expected": true,
+  "warnings": [],
+  "note": ""
+}

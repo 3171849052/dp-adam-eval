@@ -1,0 +1,20 @@
+{
+  "wall_time": 1.3022172451019287,
+  "total_refresh_time": 0.11618444323539734,
+  "mean_refresh_time": 0.05809222161769867,
+  "number_of_refreshes": 2,
+  "diagnostic_seconds": 1.0262077674269676,
+  "peak_cuda_memory_allocated": 175031808,
+  "peak_cuda_memory_reserved": 222298112,
+  "preconditioner_state_bytes": 10069164,
+  "final_accuracy": 0.09375,
+  "best_accuracy": 0.09375,
+  "late_mean_accuracy": 0.078125,
+  "epsilon_spent": 0.9941875233938002,
+  "noise_multiplier": 2.734375,
+  "completed_steps": 4,
+  "final_model_hash": "e5b66879d48b62a02bce1782da353b0014251a8e23cba02c9b34236a4665f6df",
+  "fingerprint": "b0f7784980b0b5e2b5498906499c68746abbc61375b67229b91f45ad077a72c2",
+  "seed": 42,
+  "method": "dp_kfc"
+}

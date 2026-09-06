@@ -1,0 +1,98 @@
+{
+  "private": [
+    {
+      "step": 1,
+      "batch_indices": [
+        15,
+        8,
+        13,
+        0
+      ],
+      "model_hash": "afbbf058cef4a45e10579af0c427b188c92bbd7e2269ef907f180ede3e0b5c97",
+      "noise_rng_before": "cb0af0cbec78188e11f2a9b09e1172429646e6e41a1a6ec6f8c7cc4d1cc5fe3a",
+      "noise_rng_after": "65f1068386521d9a79d934198d5f5e293bae913028750436047e4b624d1e9f90"
+    },
+    {
+      "step": 2,
+      "batch_indices": [
+        4,
+        6,
+        2,
+        1
+      ],
+      "model_hash": "a0b6961d9033c1c2b049b69b1493449072af3d4de64aca80675f98f7b535d52a",
+      "noise_rng_before": "65f1068386521d9a79d934198d5f5e293bae913028750436047e4b624d1e9f90",
+      "noise_rng_after": "1aa2acfa8f9c5a2d8e374b96e18b3c00b057fd47f65ca240654d1eef555aef74"
+    },
+    {
+      "step": 3,
+      "batch_indices": [
+        11,
+        10,
+        9,
+        3
+      ],
+      "model_hash": "52d978ca689c436edb9d4f5c910264ef4f48136a0ec8cb9f1fee8f12b5324463",
+      "noise_rng_before": "1aa2acfa8f9c5a2d8e374b96e18b3c00b057fd47f65ca240654d1eef555aef74",
+      "noise_rng_after": "7cd5736528926904f0a5b989e8ecbb5e1e2e42751ce8a3a20d6e5781b7630b3c"
+    },
+    {
+      "step": 4,
+      "batch_indices": [
+        7,
+        14,
+        12,
+        5
+      ],
+      "model_hash": "3486a5a198b73ed6f34dfcf3a754e1e616540a1379be038af8dcfe17be722eda",
+      "noise_rng_before": "7cd5736528926904f0a5b989e8ecbb5e1e2e42751ce8a3a20d6e5781b7630b3c",
+      "noise_rng_after": "44fabfdb469a5958e0938de708daaec3cd02404f9a8fd51f33a8c96732782f72"
+    }
+  ],
+  "synthetic": [
+    {
+      "step": 0,
+      "rng_before": "d5cc346cb8eb9e89a65f88e78b22228fc65d627cc391bb7f3b118589c851cd20",
+      "rng_after": "22e265bbe788482d61600818b380eccb7b1980e7a1903b5a4c53281d682533c1",
+      "samples_hash": "bb1b2e57e42b1ad719cbf971e1ded61c2142637de04cfc2e2e9ce01dc50f7787",
+      "labels_hash": "0bfcbcd7ea1a2fbf6f2b969eb80437a1100d9a8341e1a0428990e0a2300fdc26",
+      "count": 8
+    },
+    {
+      "step": 2,
+      "rng_before": "22e265bbe788482d61600818b380eccb7b1980e7a1903b5a4c53281d682533c1",
+      "rng_after": "b4c9340f7703c981f4e3c421c7032fe126caa074c1992da7c442fbd92183a549",
+      "samples_hash": "d6061892f7c73acf556651aae47ff9c44bc0cfe720fb06ae77ea9c451200d4aa",
+      "labels_hash": "d6b1c4a6c4a1e8cbe43958e171d0dace48879b39026b0c1714254c463b71a990",
+      "count": 8
+    }
+  ],
+  "stale": [
+    {
+      "step": 0,
+      "rng_before": "82347b4679303890d26b055dbe1611e46fc7105478ffa8fc1f1ffb9307beb56c",
+      "rng_after": "54742f868839677871a1b770f4d4408167d74d3f5da3f35a2b1637c0fdaec19a",
+      "samples_hash": "f1968ade5a4c54d29416bf76040822b2d9927bad526ffc81358212cbba8bda3f",
+      "labels_hash": "5f0618a9d26903cb367a83aaae6c245d3447d9c46012d2fb7608163b54c35a14",
+      "count": 8
+    },
+    {
+      "step": 2,
+      "rng_before": "54742f868839677871a1b770f4d4408167d74d3f5da3f35a2b1637c0fdaec19a",
+      "rng_after": "ef573912a9e8d647df0602850bcad99e22e639808648597f8bc3e0845ecc4ac6",
+      "samples_hash": "08944d8f5d7f6ddd88fd13b5a7754193a0f9eac454bd0df45b89884fc702ee5b",
+      "labels_hash": "17d00c6dee9f56ee459238a2b99b4b8d25e6be571d6fa57cc1b0cc4c8ffd70bb",
+      "count": 8
+    }
+  ],
+  "oracle_indices": [
+    11,
+    5,
+    8,
+    6,
+    1,
+    15,
+    2,
+    10
+  ]
+}

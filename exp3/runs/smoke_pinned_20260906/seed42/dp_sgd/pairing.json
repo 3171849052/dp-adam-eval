@@ -1,0 +1,64 @@
+{
+  "private": [
+    {
+      "step": 1,
+      "batch_indices": [
+        15,
+        8,
+        13,
+        0
+      ],
+      "model_hash": "b4536608215527dac579c2911b7776362f66288b8302f8ef14c51ec356a33b99",
+      "noise_rng_before": "cb0af0cbec78188e11f2a9b09e1172429646e6e41a1a6ec6f8c7cc4d1cc5fe3a",
+      "noise_rng_after": "65f1068386521d9a79d934198d5f5e293bae913028750436047e4b624d1e9f90"
+    },
+    {
+      "step": 2,
+      "batch_indices": [
+        4,
+        6,
+        2,
+        1
+      ],
+      "model_hash": "642173b3d2f86381d8675d533a9b79fa7ca43a9c0efd1b1a06d15111c6ffc7c3",
+      "noise_rng_before": "65f1068386521d9a79d934198d5f5e293bae913028750436047e4b624d1e9f90",
+      "noise_rng_after": "1aa2acfa8f9c5a2d8e374b96e18b3c00b057fd47f65ca240654d1eef555aef74"
+    },
+    {
+      "step": 3,
+      "batch_indices": [
+        11,
+        10,
+        9,
+        3
+      ],
+      "model_hash": "b5548b98a4f55184ab46ece787b9fd64d2e11b81bba8ce2f0dc93f80a2577566",
+      "noise_rng_before": "1aa2acfa8f9c5a2d8e374b96e18b3c00b057fd47f65ca240654d1eef555aef74",
+      "noise_rng_after": "7cd5736528926904f0a5b989e8ecbb5e1e2e42751ce8a3a20d6e5781b7630b3c"
+    },
+    {
+      "step": 4,
+      "batch_indices": [
+        7,
+        14,
+        12,
+        5
+      ],
+      "model_hash": "d5472e36184571e8efa725334f4270c5e19f791149894a78816befa428b652d7",
+      "noise_rng_before": "7cd5736528926904f0a5b989e8ecbb5e1e2e42751ce8a3a20d6e5781b7630b3c",
+      "noise_rng_after": "44fabfdb469a5958e0938de708daaec3cd02404f9a8fd51f33a8c96732782f72"
+    }
+  ],
+  "synthetic": [],
+  "stale": [],
+  "oracle_indices": [
+    11,
+    5,
+    8,
+    6,
+    1,
+    15,
+    2,
+    10
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "runs": 3,
+  "steps_per_run": 4,
+  "smoke": true,
+  "epsilon_spent": 0.9941875233938002,
+  "noise_multiplier": 2.734375,
+  "oracle_trajectory_isolation": "covered by unit test for all 3 methods",
+  "upstream_git_commit": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
+  "upstream_git_dirty": true,
+  "warnings": [
+    "Dirty upstream accepted for smoke only; formal training/aggregation requires clean checkout"
+  ],
+  "note": "Smoke has no strictly late refresh/oracle point when total=4,K=2; corresponding summaries are N/A"
+}
