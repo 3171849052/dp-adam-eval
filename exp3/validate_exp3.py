@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import numpy as np
 from exp3.common import ROOT, LAYERS, read_config, save_json
+from exp3.audit_upstream import EXPECTED_UPSTREAM_REPO, canonicalize_repo_url
 from exp3.summarize_exp3 import load_runs
 
 
@@ -128,6 +129,8 @@ def validate(root, c, output):
     result = dict(passed=True, runs=len(runs), steps_per_run=runs[0][1]["total_steps"], smoke=c["smoke"],
                   epsilon_spent=epsilons[0], noise_multiplier=sigmas[0], oracle_trajectory_isolation="covered by unit test for all 3 methods",
                   upstream_git_commit=runs[0][1]["upstream_git_commit"], upstream_git_dirty=runs[0][1]["upstream_git_dirty"],
+                  upstream_origin=runs[0][1]["upstream_origin"],
+                  origin_matches_expected=(canonicalize_repo_url(runs[0][1]["upstream_origin"]) == canonicalize_repo_url(EXPECTED_UPSTREAM_REPO)),
                   warnings=["Dirty upstream accepted for smoke only; formal training/aggregation requires clean checkout"] if runs[0][1]["upstream_git_dirty"] else [],
                   note="Smoke has no strictly late refresh/oracle point when total=4,K=2; corresponding summaries are N/A" if c["smoke"] else "")
     save_json(Path(output) / "validation.json", result)

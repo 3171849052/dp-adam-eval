@@ -7,7 +7,8 @@ from pathlib import Path
 import subprocess
 
 REPO = Path(__file__).resolve().parents[2] / "DP-KFC"
-PUBLIC = "https://github.com/molinamarcvdb/DP-KFC.git"
+EXPECTED_UPSTREAM_REPO = "https://github.com/molinamarcvdb/DP-KFC.git"
+PUBLIC = EXPECTED_UPSTREAM_REPO
 PINNED_COMMIT = "eb31b9aeb2280642684f4cedfa65cc02b76c76cd"
 
 
@@ -15,9 +16,17 @@ def git(*args):
     return subprocess.check_output(["git", "--no-optional-locks", "-C", str(REPO), *args], text=True).strip()
 
 
+def canonicalize_repo_url(url):
+    """Normalize the supported HTTPS repo spellings for provenance checks."""
+    normalized = str(url).rstrip("/")
+    return normalized[:-4] if normalized.endswith(".git") else normalized
+
+
 def checkout_info():
     status = git("status", "--porcelain", "--untracked-files=all")
-    return dict(upstream_repo=PUBLIC, upstream_git_commit=git("rev-parse", "HEAD"),
+    origin_url = git("remote", "get-url", "origin")
+    return dict(upstream_repo=EXPECTED_UPSTREAM_REPO, upstream_origin=origin_url,
+                upstream_git_commit=git("rev-parse", "HEAD"),
                 upstream_git_dirty=bool(status), upstream_git_remote=git("remote", "-v"),
                 upstream_git_status=status.splitlines())
 
@@ -29,17 +38,28 @@ def require_clean(info, smoke):
 
 def require_pinned(info, smoke):
     """Require the public checkout pin whenever Exp3 is in formal mode."""
+    if smoke:
+        return
     require_clean(info, smoke)
-    if not smoke and info.get("upstream_git_commit") != PINNED_COMMIT:
+    if info.get("upstream_git_commit") != PINNED_COMMIT:
         raise ValueError(
-            f"Formal Exp3 requires upstream commit {PINNED_COMMIT}; "
+            f"Formal Exp3 requires upstream commit {PINNED_COMMIT} (exact pin); "
             f"found {info.get('upstream_git_commit')}"
+        )
+    if canonicalize_repo_url(info.get("upstream_origin")) != canonicalize_repo_url(EXPECTED_UPSTREAM_REPO):
+        raise ValueError(
+            f"Formal Exp3 requires origin {EXPECTED_UPSTREAM_REPO}; "
+            f"found {info.get('upstream_origin')}"
         )
 
 
 def audit():
     info = checkout_info()
     remote = subprocess.check_output(["git", "ls-remote", PUBLIC, "HEAD"], text=True).split()[0]
+    info["expected_upstream_repo"] = EXPECTED_UPSTREAM_REPO
+    info["origin_matches_expected"] = (
+        canonicalize_repo_url(info["upstream_origin"]) == canonicalize_repo_url(EXPECTED_UPSTREAM_REPO)
+    )
     info["public_head"] = remote
     info["pinned_commit"] = PINNED_COMMIT
     info["local_head_matches_pinned"] = info["upstream_git_commit"] == PINNED_COMMIT

@@ -9,10 +9,11 @@ import pytest
 import torch
 import torch.nn.functional as F
 from opacus import GradSampleModule
-from exp3.common import DEFAULT, ROOT, LAYERS, SimpleCNN, RNGStream, read_config, provenance
+from exp3.common import DEFAULT, ROOT, LAYERS, SimpleCNN, RNGStream, fingerprint, read_config, provenance
 from exp3.preconditioners import synthetic_samples, refresh, apply
 from exp3.geometry import oracle_compare
-from exp3.audit_upstream import PINNED_COMMIT, checkout_info, require_clean, require_pinned
+from exp3.audit_upstream import (EXPECTED_UPSTREAM_REPO, PINNED_COMMIT, canonicalize_repo_url,
+                                 checkout_info, require_clean, require_pinned)
 from exp3.cost import CostTracker, core_wall_time
 from exp3.summarize_exp3 import summarize, load_runs
 from dp_kfac.recorder import KFACRecorder
@@ -154,6 +155,7 @@ def test_provenance_and_dirty_behavior():
     p = provenance()
     assert p["upstream_git_commit"] == info["upstream_git_commit"]
     assert info["upstream_git_commit"] == PINNED_COMMIT
+    assert canonicalize_repo_url(info["upstream_origin"]) == canonicalize_repo_url(EXPECTED_UPSTREAM_REPO)
     for name in ("models","data","optimizer","privacy","covariance","recorder","precondition","trainer","types"):
         assert len(p[f"upstream/{name}.py"]) == 64
     require_clean(dict(info,upstream_git_dirty=True),smoke=True)
@@ -167,8 +169,23 @@ def test_formal_requires_exact_upstream_pin():
     require_pinned(info, smoke=False)
     with pytest.raises(ValueError, match="requires upstream commit"):
         require_pinned(dict(info, upstream_git_commit="0" * 40), smoke=False)
-    # Smoke retains its documented ability to audit a dirty checkout.
-    require_pinned(dict(info, upstream_git_dirty=True), smoke=True)
+    with pytest.raises(ValueError, match="clean upstream"):
+        require_pinned(dict(info, upstream_git_dirty=True), smoke=False)
+    with pytest.raises(ValueError, match="origin"):
+        require_pinned(dict(info, upstream_origin="https://github.com/example/DP-KFC.git"), smoke=False)
+
+
+def test_origin_url_canonicalization_and_smoke_relaxation():
+    assert canonicalize_repo_url("https://github.com/molinamarcvdb/DP-KFC.git") == canonicalize_repo_url(
+        "https://github.com/molinamarcvdb/DP-KFC"
+    )
+    info = checkout_info()
+    for changes in (
+        {"upstream_git_dirty": True},
+        {"upstream_git_commit": "0" * 40},
+        {"upstream_origin": "https://github.com/example/DP-KFC.git"},
+    ):
+        require_pinned(dict(info, **changes), smoke=True)
 
 
 def test_final_test_loss_and_old_new_aggregation(tmp_path):
@@ -216,6 +233,22 @@ def test_aggregation_rejects_mixed_upstream_provenance(tmp_path):
     # Dirty provenance is checked before any metric aggregation in full mode.
     with pytest.raises(ValueError,match="clean upstream"):
         load_runs(tmp_path,dict(c,smoke=False))
+
+
+def test_aggregation_rejects_wrong_upstream_origin(tmp_path):
+    c = read_config(ROOT / "configs/smoke.json")
+    source = dict(provenance(), upstream_origin="https://github.com/example/DP-KFC.git")
+    for method in ("dp_sgd", "syn_diag", "dp_kfc"):
+        root = tmp_path / "seed42" / method
+        root.mkdir(parents=True)
+        meta = dict(seed=42, method=method, complete=True, fingerprint=fingerprint(c), provenance=source)
+        meta.update({k: v for k, v in source.items() if k.startswith("upstream_")})
+        for filename, value in (("config", c), ("metadata", meta), ("summary", dict(fingerprint=fingerprint(c)))):
+            (root / f"{filename}.json").write_text(json.dumps(value))
+        for name in ("train", "oracle", "refresh"):
+            (root / f"{name}_metrics.csv").write_text("step,layer,seed,method,config_fingerprint\n")
+    with pytest.raises(ValueError, match="origin"):
+        load_runs(tmp_path, dict(c, smoke=False))
 
 
 def test_checkout_single_batch_privacy_matches_public_head():

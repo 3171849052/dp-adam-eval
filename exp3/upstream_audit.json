@@ -1,9 +1,12 @@
 {
   "upstream_repo": "https://github.com/molinamarcvdb/DP-KFC.git",
+  "upstream_origin": "https://github.com/molinamarcvdb/DP-KFC.git",
   "upstream_git_commit": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
   "upstream_git_dirty": false,
   "upstream_git_remote": "origin\thttps://github.com/molinamarcvdb/DP-KFC.git (fetch)\norigin\thttps://github.com/molinamarcvdb/DP-KFC.git (push)",
   "upstream_git_status": [],
+  "expected_upstream_repo": "https://github.com/molinamarcvdb/DP-KFC.git",
+  "origin_matches_expected": true,
   "public_head": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
   "pinned_commit": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
   "local_head_matches_pinned": true,

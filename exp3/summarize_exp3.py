@@ -36,7 +36,7 @@ def load_runs(root, c):
             path = Path(root) / f"seed{seed}" / method
             meta = json.loads((path / "metadata.json").read_text())
             require_pinned(meta["provenance"], c["smoke"])
-            for key in ("upstream_repo", "upstream_git_commit", "upstream_git_dirty", "upstream_git_remote"):
+            for key in ("upstream_repo", "upstream_origin", "upstream_git_commit", "upstream_git_dirty", "upstream_git_remote"):
                 if meta[key] != meta["provenance"][key]:
                     raise ValueError(f"Inconsistent upstream provenance: {path}/{key}")
             summary = json.loads((path / "summary.json").read_text())
