@@ -1,0 +1,9 @@
+{
+  "checkpoints": 11,
+  "source_artifacts": 55,
+  "metric_rows": 13060,
+  "png_figures": 8,
+  "pdf_figures": 8,
+  "temporary_grams_remaining": 0,
+  "full_experiment_run": false
+}

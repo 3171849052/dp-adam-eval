@@ -1,0 +1,110 @@
+{
+  "config": {
+    "seed": 42,
+    "device": "cpu",
+    "threads": 2,
+    "num_workers": 0,
+    "batch_size": 2,
+    "epochs": 1,
+    "learning_rate": 0.001,
+    "epsilon": 1.0,
+    "delta": 1e-05,
+    "max_grad_norm": 1.0,
+    "m_diag": 4,
+    "m_full": 3,
+    "pink_seeds": [
+      0,
+      1,
+      2
+    ],
+    "analysis_batch_size": 2,
+    "gram_chunk": 4096,
+    "eps_num": 1e-12,
+    "output": "runs/smoke",
+    "train_subset": 20
+  },
+  "fingerprint": "583364cd6ff97b8c8c61356434175829b1711add0b386a5003d4fc9d17338c96",
+  "upstream": {
+    "models.py": "6e62df23bb414e2fb633a6993961e12e1220726ded932a7afc67763713aa83be",
+    "data.py": "ceb7ca39c5448dc6d1fb6df32e33e1e849d21e0f316978fda57e0265bf8f09f7",
+    "optimizer.py": "125b2c1663ca6c9cfdee36c7e1688e428b4cbdc71d469d45b23fa94ac0b015d0",
+    "trainer.py": "605992626bf13a7ebe048e7a68da7439c10e4f89e48667df2fb9f15553312218",
+    "privacy.py": "22a5fb9baed1b10811202488362dcc7c24d9a51ba07b0ed3acfcb0b96cd57211",
+    "covariance.py": "5f378c47d7264e03125cde1bd9666c4e93061a84a4d4bda7d908b4f3699891bb",
+    "recorder.py": "460bcebab2785cba1e430d7024dcbf077087bf4159fda3da98fe466966832b9a"
+  },
+  "torch": "2.13.0+cu126",
+  "noise_multiplier": 1.93359375,
+  "sample_rate": 0.1,
+  "total_steps": 10,
+  "accountant": "rdp",
+  "sampling": "shuffle, drop_last=True (upstream)",
+  "checkpoints": [
+    {
+      "file": "checkpoint_000.pt",
+      "step": 0,
+      "percent": 0,
+      "epsilon_spent": 0.0
+    },
+    {
+      "file": "checkpoint_010.pt",
+      "step": 1,
+      "percent": 10,
+      "epsilon_spent": 0.5635980167216392
+    },
+    {
+      "file": "checkpoint_020.pt",
+      "step": 2,
+      "percent": 20,
+      "epsilon_spent": 0.6353691388237719
+    },
+    {
+      "file": "checkpoint_030.pt",
+      "step": 3,
+      "percent": 30,
+      "epsilon_spent": 0.6939784107134286
+    },
+    {
+      "file": "checkpoint_040.pt",
+      "step": 4,
+      "percent": 40,
+      "epsilon_spent": 0.7451034783373023
+    },
+    {
+      "file": "checkpoint_050.pt",
+      "step": 5,
+      "percent": 50,
+      "epsilon_spent": 0.791397650367151
+    },
+    {
+      "file": "checkpoint_060.pt",
+      "step": 6,
+      "percent": 60,
+      "epsilon_spent": 0.8376918223969998
+    },
+    {
+      "file": "checkpoint_070.pt",
+      "step": 7,
+      "percent": 70,
+      "epsilon_spent": 0.8772974924225224
+    },
+    {
+      "file": "checkpoint_080.pt",
+      "step": 8,
+      "percent": 80,
+      "epsilon_spent": 0.9156975243361072
+    },
+    {
+      "file": "checkpoint_090.pt",
+      "step": 9,
+      "percent": 90,
+      "epsilon_spent": 0.9540975562496918
+    },
+    {
+      "file": "checkpoint_100.pt",
+      "step": 10,
+      "percent": 100,
+      "epsilon_spent": 0.9916219510316753
+    }
+  ]
+}

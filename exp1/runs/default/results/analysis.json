@@ -1,0 +1,45 @@
+{
+  "config": {
+    "seed": 42,
+    "device": "auto",
+    "threads": 4,
+    "num_workers": 2,
+    "batch_size": 256,
+    "epochs": 5,
+    "learning_rate": 0.001,
+    "epsilon": 1.0,
+    "delta": 1e-05,
+    "max_grad_norm": 1.0,
+    "m_diag": 2560,
+    "m_full": 512,
+    "pink_seeds": [
+      0,
+      1,
+      2
+    ],
+    "analysis_batch_size": 32,
+    "gram_chunk": 4096,
+    "eps_num": 1e-12,
+    "output": "runs/default",
+    "train_subset": null
+  },
+  "fingerprint": "f172f56a3d27070165fbd2dfe05a19ea7334ad836bfa8ca48245e1fb6142d74a",
+  "upstream": {
+    "models.py": "6e62df23bb414e2fb633a6993961e12e1220726ded932a7afc67763713aa83be",
+    "data.py": "ceb7ca39c5448dc6d1fb6df32e33e1e849d21e0f316978fda57e0265bf8f09f7",
+    "optimizer.py": "125b2c1663ca6c9cfdee36c7e1688e428b4cbdc71d469d45b23fa94ac0b015d0",
+    "trainer.py": "605992626bf13a7ebe048e7a68da7439c10e4f89e48667df2fb9f15553312218",
+    "privacy.py": "22a5fb9baed1b10811202488362dcc7c24d9a51ba07b0ed3acfcb0b96cd57211",
+    "covariance.py": "5f378c47d7264e03125cde1bd9666c4e93061a84a4d4bda7d908b4f3699891bb",
+    "recorder.py": "460bcebab2785cba1e430d7024dcbf077087bf4159fda3da98fe466966832b9a"
+  },
+  "rows": 13060,
+  "parameter_order": "output-major augmented rows: weight row then bias",
+  "raw_kfac": "upstream spatial-averaged covariances, sum-loss deltas, eps=0",
+  "repo_kfac": "mean-loss equivalent at configured batch_size; covariance eps=1e-5",
+  "inverse_sqrt_damping_not_in_fisher": 0.001,
+  "full_subset": "first m_full of each fixed diagnostic probe",
+  "synthetic_generation_device": "cpu",
+  "diagnostic_tf32": false,
+  "note": "Private diagnostic statistics are unnoised research diagnostics."
+}
