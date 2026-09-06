@@ -1,0 +1,23 @@
+{
+  "seed": 42,
+  "device": "cpu",
+  "threads": 2,
+  "num_workers": 0,
+  "batch_size": 4,
+  "epochs": 1,
+  "learning_rate": 0.1,
+  "epsilon": 1.0,
+  "delta": 1e-05,
+  "max_grad_norm": 1.0,
+  "K": 4,
+  "M_syn": 8,
+  "M_oracle": 8,
+  "lambda": 0.001,
+  "analysis_batch_size": 2,
+  "eval_interval": 2,
+  "eps_num": 1e-12,
+  "oracle_enabled": true,
+  "output": "runs/smoke_validation_01/lambda1e3_K4",
+  "train_subset": 16,
+  "test_subset": 32
+}

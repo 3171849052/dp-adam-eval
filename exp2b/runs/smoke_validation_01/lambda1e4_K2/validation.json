@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "all_four_layers": true,
+  "figures": 12,
+  "rows": {
+    "train": 4,
+    "refresh": 8,
+    "oracle": 8
+  }
+}

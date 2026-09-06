@@ -1,0 +1,21 @@
+{
+  "unit_tests": {
+    "passed": 14,
+    "failed": 0,
+    "environment": "curve"
+  },
+  "smoke": {
+    "lambda1e4_K2": {
+      "completed_steps": 4,
+      "validation_passed": true,
+      "single_run_figures": 12
+    },
+    "lambda1e3_K4": {
+      "completed_steps": 4,
+      "validation_passed": true,
+      "single_run_figures": 12
+    }
+  },
+  "sweep_figures": 12,
+  "full_sweep_started": false
+}
