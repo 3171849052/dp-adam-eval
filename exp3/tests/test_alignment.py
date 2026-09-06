@@ -12,7 +12,7 @@ from opacus import GradSampleModule
 from exp3.common import DEFAULT, ROOT, LAYERS, SimpleCNN, RNGStream, read_config, provenance
 from exp3.preconditioners import synthetic_samples, refresh, apply
 from exp3.geometry import oracle_compare
-from exp3.audit_upstream import checkout_info, require_clean
+from exp3.audit_upstream import PINNED_COMMIT, checkout_info, require_clean, require_pinned
 from exp3.cost import CostTracker, core_wall_time
 from exp3.summarize_exp3 import summarize, load_runs
 from dp_kfac.recorder import KFACRecorder
@@ -153,12 +153,22 @@ def test_provenance_and_dirty_behavior():
     info = checkout_info()
     p = provenance()
     assert p["upstream_git_commit"] == info["upstream_git_commit"]
+    assert info["upstream_git_commit"] == PINNED_COMMIT
     for name in ("models","data","optimizer","privacy","covariance","recorder","precondition","trainer","types"):
         assert len(p[f"upstream/{name}.py"]) == 64
     require_clean(dict(info,upstream_git_dirty=True),smoke=True)
     require_clean(dict(info,upstream_git_dirty=False),smoke=False)
     with pytest.raises(ValueError,match="clean upstream"):
         require_clean(dict(info,upstream_git_dirty=True),smoke=False)
+
+
+def test_formal_requires_exact_upstream_pin():
+    info = checkout_info()
+    require_pinned(info, smoke=False)
+    with pytest.raises(ValueError, match="requires upstream commit"):
+        require_pinned(dict(info, upstream_git_commit="0" * 40), smoke=False)
+    # Smoke retains its documented ability to audit a dirty checkout.
+    require_pinned(dict(info, upstream_git_dirty=True), smoke=True)
 
 
 def test_final_test_loss_and_old_new_aggregation(tmp_path):

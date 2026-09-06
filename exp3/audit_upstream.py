@@ -8,6 +8,7 @@ import subprocess
 
 REPO = Path(__file__).resolve().parents[2] / "DP-KFC"
 PUBLIC = "https://github.com/molinamarcvdb/DP-KFC.git"
+PINNED_COMMIT = "eb31b9aeb2280642684f4cedfa65cc02b76c76cd"
 
 
 def git(*args):
@@ -26,10 +27,23 @@ def require_clean(info, smoke):
         raise ValueError("Formal Exp3 requires a clean upstream checkout; dirty upstream is allowed only for smoke")
 
 
+def require_pinned(info, smoke):
+    """Require the public checkout pin whenever Exp3 is in formal mode."""
+    require_clean(info, smoke)
+    if not smoke and info.get("upstream_git_commit") != PINNED_COMMIT:
+        raise ValueError(
+            f"Formal Exp3 requires upstream commit {PINNED_COMMIT}; "
+            f"found {info.get('upstream_git_commit')}"
+        )
+
+
 def audit():
     info = checkout_info()
     remote = subprocess.check_output(["git", "ls-remote", PUBLIC, "HEAD"], text=True).split()[0]
     info["public_head"] = remote
+    info["pinned_commit"] = PINNED_COMMIT
+    info["local_head_matches_pinned"] = info["upstream_git_commit"] == PINNED_COMMIT
+    info["public_head_matches_pinned"] = remote == PINNED_COMMIT
     info["local_head_matches_public"] = remote == info["upstream_git_commit"]
     info["files"] = {}
     for p in sorted((REPO / "src/dp_kfac").glob("*.py")):

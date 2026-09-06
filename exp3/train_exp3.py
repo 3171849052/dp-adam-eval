@@ -13,7 +13,7 @@ from exp3.common import (ROOT, METHODS, LAYERS, read_config, fingerprint, proven
 from exp3.preconditioners import synthetic_samples, refresh, apply, state_bytes
 from exp3.geometry import diagnose, oracle_compare, stale
 from exp3.cost import CostTracker
-from exp3.audit_upstream import require_clean
+from exp3.audit_upstream import require_pinned
 from exp3.metrics import before_clip, after_noise, norm_metrics
 from dp_kfac.privacy import clip_and_noise_gradients, _compute_per_sample_norms_squared
 
@@ -69,7 +69,7 @@ def train(c, seed, method, output, data_override=None):
     if method not in METHODS or seed not in c["seeds"]:
         raise ValueError("Unknown method/seed")
     source_provenance = provenance()
-    require_clean(source_provenance, c["smoke"])
+    require_pinned(source_provenance, c["smoke"])
     root = Path(output).resolve() / f"seed{seed}" / method
     root.mkdir(parents=True, exist_ok=False)
     save_json(root / "config.json", c)

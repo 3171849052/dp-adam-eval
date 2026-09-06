@@ -5,17 +5,19 @@ experiments. Existing run directories are never overwritten.
 
 ```bash
 conda run -n curve env CUBLAS_WORKSPACE_CONFIG=:4096:8 python -m pytest exp3/tests -q -s
-conda run -n curve env CUBLAS_WORKSPACE_CONFIG=:4096:8 python -m exp3.train_exp3 --config exp3/configs/full.json --output exp3/runs --method all
-conda run -n curve python -m exp3.validate_exp3 --config exp3/configs/full.json --runs exp3/runs --output exp3
-conda run -n curve python -m exp3.summarize_exp3 --config exp3/configs/full.json --runs exp3/runs --output exp3
-conda run -n curve python -m exp3.plot_exp3 --config exp3/configs/full.json --runs exp3/runs --output exp3
+EXP3_FORMAL_RUNS=exp3/runs/formal_YYYYMMDD
+conda run -n curve env CUBLAS_WORKSPACE_CONFIG=:4096:8 python -m exp3.train_exp3 --config exp3/configs/full.json --output "$EXP3_FORMAL_RUNS" --method all
+conda run -n curve python -m exp3.validate_exp3 --config exp3/configs/full.json --runs "$EXP3_FORMAL_RUNS" --output "$EXP3_FORMAL_RUNS"
+conda run -n curve python -m exp3.summarize_exp3 --config exp3/configs/full.json --runs "$EXP3_FORMAL_RUNS" --output "$EXP3_FORMAL_RUNS"
+conda run -n curve python -m exp3.plot_exp3 --config exp3/configs/full.json --runs "$EXP3_FORMAL_RUNS" --output "$EXP3_FORMAL_RUNS"
 ```
 
-**Current formal-run blocker:** the audited `../DP-KFC` checkout is dirty.
-Formal training, validation, summary, and plotting reject runs with dirty
-upstream provenance. This task does not clean, reset, commit, or otherwise
-modify upstream. A clean, reviewed checkout and equivalence/smoke revalidation
-are required before formal use. Smoke allows dirty upstream and records it.
+Formal mode is pinned to public DP-KFC commit
+`eb31b9aeb2280642684f4cedfa65cc02b76c76cd`.
+Formal training, validation, summary, and plotting reject both dirty upstream
+provenance and any other commit. The current `../DP-KFC` checkout is clean and
+at that exact pin. Smoke retains its documented ability to audit a dirty
+checkout and records the provenance.
 
 The full command covers seeds 42/7/91 × all three methods sequentially, each
 1170 steps. For one run add `--seed 42 --method dp_kfc` (alias
@@ -31,9 +33,8 @@ Plots still display the diagnostic points. Never substitute early points.
 `conda run -n curve python -m exp3.audit_upstream` when intentionally re-auditing.
 The audited local HEAD and public remote HEAD are both
 `eb31b9aeb2280642684f4cedfa65cc02b76c76cd`, remote
-`https://github.com/molinamarcvdb/DP-KFC.git`. The worktree has 20 modified tracked
-files and 4 untracked files. Among the nine required dependency files,
-`optimizer.py`, `covariance.py`, `privacy.py`, and `trainer.py` differ from HEAD.
+`https://github.com/molinamarcvdb/DP-KFC.git`. The worktree is clean with no
+untracked files, and all required dependency files match that commit.
 
 AST comparison against public HEAD finds the Pink generator, KFAC recorder,
 covariance definitions/aggregation/inverse roots, and per-sample transform
@@ -76,9 +77,8 @@ sample-rate convention are unchanged; sampling is not Poisson.
 The deliberate Exp3 experimental controls remain matched refresh/budget,
 paired RNG streams, fixed SGD, and diagnostics. This is not a reproduction of
 the upstream default Trainer schedule or optimizer settings. KFAC construction
-and transformation directly follow the current checkout; its relevant KFAC
-functions match public HEAD. Dirty local privacy/trainer code is recorded,
-not described as byte-identical public code.
+and transformation directly follow the pinned public checkout; its relevant
+KFAC functions match public HEAD byte-for-byte at the pinned commit.
 
 ## Independent probes and old/new oracle
 

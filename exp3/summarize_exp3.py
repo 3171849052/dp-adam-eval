@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from exp3.common import ROOT, METHODS, LAYERS, read_config, fingerprint, write_csv
-from exp3.audit_upstream import require_clean
+from exp3.audit_upstream import require_pinned
 
 LATE = {"late_norm_cv": "norm_cv", "late_coefficient_cv": "coefficient_cv",
         "late_aggregate_cosine": "aggregate_cosine", "late_shape_error": "clipping_shape_error", "late_snr": "diagnostic_snr"}
@@ -35,7 +35,7 @@ def load_runs(root, c):
         for method in METHODS:
             path = Path(root) / f"seed{seed}" / method
             meta = json.loads((path / "metadata.json").read_text())
-            require_clean(meta["provenance"], c["smoke"])
+            require_pinned(meta["provenance"], c["smoke"])
             for key in ("upstream_repo", "upstream_git_commit", "upstream_git_dirty", "upstream_git_remote"):
                 if meta[key] != meta["provenance"][key]:
                     raise ValueError(f"Inconsistent upstream provenance: {path}/{key}")

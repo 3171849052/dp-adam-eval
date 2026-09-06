@@ -1,41 +1,19 @@
 {
   "upstream_repo": "https://github.com/molinamarcvdb/DP-KFC.git",
   "upstream_git_commit": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
-  "upstream_git_dirty": true,
+  "upstream_git_dirty": false,
   "upstream_git_remote": "origin\thttps://github.com/molinamarcvdb/DP-KFC.git (fetch)\norigin\thttps://github.com/molinamarcvdb/DP-KFC.git (push)",
-  "upstream_git_status": [
-    "M .gitignore",
-    " M README.md",
-    " M config.yaml",
-    " M configs/exp1_bert_stackoverflow.yaml",
-    " M configs/exp1_cnn_mnist.yaml",
-    " M configs/exp1_crossvit_cifar100.yaml",
-    " M configs/exp_baselines_comparison.yaml",
-    " M configs/exp_full_sweep.yaml",
-    " M configs/exp_lora_cifar100.yaml",
-    " M configs/exp_quick_baselines.yaml",
-    " M configs/exp_scenarios.yaml",
-    " M main.py",
-    " M src/dp_kfac/__init__.py",
-    " M src/dp_kfac/config.py",
-    " M src/dp_kfac/covariance.py",
-    " M src/dp_kfac/experiment.py",
-    " M src/dp_kfac/methods.py",
-    " M src/dp_kfac/optimizer.py",
-    " M src/dp_kfac/privacy.py",
-    " M src/dp_kfac/trainer.py",
-    "?? configs/exp1_cnn_mnist_shampoo.yaml",
-    "?? dp-shampoo-v1.py",
-    "?? run.sh",
-    "?? tests/test_batch_accumulation.py"
-  ],
+  "upstream_git_status": [],
   "public_head": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
+  "pinned_commit": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
+  "local_head_matches_pinned": true,
+  "public_head_matches_pinned": true,
   "local_head_matches_public": true,
   "files": {
     "src/dp_kfac/__init__.py": {
-      "checkout_sha256": "fbb6340c8d2275271ce1850483c2802fa86a8163a906e20108b515fddf51a3e9",
+      "checkout_sha256": "8a93b2fa0821035916d56b77f5cd92dcd2f60b85792cb391b6b45625c47c338c",
       "head_sha256": "8a93b2fa0821035916d56b77f5cd92dcd2f60b85792cb391b6b45625c47c338c",
-      "differs_from_head": true
+      "differs_from_head": false
     },
     "src/dp_kfac/analysis.py": {
       "checkout_sha256": "b92304ea0a4e25a4d8db5410af0358979f66aa8a46ddcb0252ffb54cf367a07c",
@@ -48,14 +26,14 @@
       "differs_from_head": false
     },
     "src/dp_kfac/config.py": {
-      "checkout_sha256": "dc90515172169f4be0bb522794db600065ee7863593dda38912bb8a777f8ccbe",
+      "checkout_sha256": "23b7702373cfd1564b256fa1179c717c9dabd949f54a5302ce1c217aa8f976ae",
       "head_sha256": "23b7702373cfd1564b256fa1179c717c9dabd949f54a5302ce1c217aa8f976ae",
-      "differs_from_head": true
+      "differs_from_head": false
     },
     "src/dp_kfac/covariance.py": {
-      "checkout_sha256": "5f378c47d7264e03125cde1bd9666c4e93061a84a4d4bda7d908b4f3699891bb",
+      "checkout_sha256": "989bf737da13743e65bf6685e0b7a05082733fb9425ef0b0b4b7dc3ffe16271c",
       "head_sha256": "989bf737da13743e65bf6685e0b7a05082733fb9425ef0b0b4b7dc3ffe16271c",
-      "differs_from_head": true
+      "differs_from_head": false
     },
     "src/dp_kfac/data.py": {
       "checkout_sha256": "ceb7ca39c5448dc6d1fb6df32e33e1e849d21e0f316978fda57e0265bf8f09f7",
@@ -63,9 +41,9 @@
       "differs_from_head": false
     },
     "src/dp_kfac/experiment.py": {
-      "checkout_sha256": "b5359d1990cc4ab50537cd4a2e549308539e65aa57b310793f988a7b674be7ad",
+      "checkout_sha256": "b47832ddca27e566805a366ba9556cb48e87499ca4db75bd8b25fed1bd2b316b",
       "head_sha256": "b47832ddca27e566805a366ba9556cb48e87499ca4db75bd8b25fed1bd2b316b",
-      "differs_from_head": true
+      "differs_from_head": false
     },
     "src/dp_kfac/lora.py": {
       "checkout_sha256": "07b7cc38d5e48b266dbc959a684fdea137fd19df0067cfccd53fe1189a1977a5",
@@ -73,9 +51,9 @@
       "differs_from_head": false
     },
     "src/dp_kfac/methods.py": {
-      "checkout_sha256": "92adfe1ac85c1080a59a56b3290d87cc54aa30d0ded2778fb07a06b677b4caa5",
+      "checkout_sha256": "10d21aac56857f1947a190adc4053402bb5b90295a344fc02a8bd4175d44959d",
       "head_sha256": "10d21aac56857f1947a190adc4053402bb5b90295a344fc02a8bd4175d44959d",
-      "differs_from_head": true
+      "differs_from_head": false
     },
     "src/dp_kfac/models.py": {
       "checkout_sha256": "6e62df23bb414e2fb633a6993961e12e1220726ded932a7afc67763713aa83be",
@@ -83,9 +61,9 @@
       "differs_from_head": false
     },
     "src/dp_kfac/optimizer.py": {
-      "checkout_sha256": "125b2c1663ca6c9cfdee36c7e1688e428b4cbdc71d469d45b23fa94ac0b015d0",
+      "checkout_sha256": "7afe9e77af0865229b4b50fd81c58c28719e1127144075664ba3d6a6a527e021",
       "head_sha256": "7afe9e77af0865229b4b50fd81c58c28719e1127144075664ba3d6a6a527e021",
-      "differs_from_head": true
+      "differs_from_head": false
     },
     "src/dp_kfac/precondition.py": {
       "checkout_sha256": "0b980d50da469a657230c64611733c7a16c74af72bfd5ee444545f97b7db91f3",
@@ -93,9 +71,9 @@
       "differs_from_head": false
     },
     "src/dp_kfac/privacy.py": {
-      "checkout_sha256": "22a5fb9baed1b10811202488362dcc7c24d9a51ba07b0ed3acfcb0b96cd57211",
+      "checkout_sha256": "c3d371e2608859d2a22903a3f3318c7928e44a90ce6b0bd4b3586201765a1cca",
       "head_sha256": "c3d371e2608859d2a22903a3f3318c7928e44a90ce6b0bd4b3586201765a1cca",
-      "differs_from_head": true
+      "differs_from_head": false
     },
     "src/dp_kfac/recorder.py": {
       "checkout_sha256": "460bcebab2785cba1e430d7024dcbf077087bf4159fda3da98fe466966832b9a",
@@ -108,9 +86,9 @@
       "differs_from_head": false
     },
     "src/dp_kfac/trainer.py": {
-      "checkout_sha256": "605992626bf13a7ebe048e7a68da7439c10e4f89e48667df2fb9f15553312218",
+      "checkout_sha256": "03c8fa53034e212ad8d10686414ae3d188ed440fb01d2b83bb503586cb7d7cd8",
       "head_sha256": "03c8fa53034e212ad8d10686414ae3d188ed440fb01d2b83bb503586cb7d7cd8",
-      "differs_from_head": true
+      "differs_from_head": false
     },
     "src/dp_kfac/types.py": {
       "checkout_sha256": "874ec4bed9b9d492858c4c966b55cb510a15c0af8640b93b2395710a3bd06d6b",
@@ -131,6 +109,6 @@
     "trainer.py:set_seed": true,
     "privacy.py:_compute_per_sample_norms_squared": true,
     "privacy.py:_compute_clip_factors": true,
-    "privacy.py:clip_and_noise_gradients": false
+    "privacy.py:clip_and_noise_gradients": true
   }
 }
