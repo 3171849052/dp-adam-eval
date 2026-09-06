@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "paired_initialization": true,
+  "paired_batch_order_and_noise_rng": true,
+  "all_four_layers": true,
+  "figures": 9,
+  "rows": {
+    "train": 8,
+    "refresh": 16,
+    "oracle": 16
+  },
+  "unit_tests": {
+    "passed": 5,
+    "failed": 0,
+    "oracle_poison_vs_disabled_identical_model": true
+  },
+  "full_experiment_started": false
+}

@@ -1,0 +1,42 @@
+[
+  {
+    "step": 1,
+    "batch_indices": [
+      15,
+      8,
+      13,
+      0
+    ],
+    "noise_rng_before": "2cda5d401032e9daa8fe04dfd4ebde0036a9d5ae819d8a5c9e7c82c2e5ec9bd4"
+  },
+  {
+    "step": 2,
+    "batch_indices": [
+      4,
+      6,
+      2,
+      1
+    ],
+    "noise_rng_before": "7806d8d13d8f3455db7ccb61b359643bbd82fa3ae461da69911e9da79efc6269"
+  },
+  {
+    "step": 3,
+    "batch_indices": [
+      11,
+      10,
+      9,
+      3
+    ],
+    "noise_rng_before": "15344baaea9db8170e8ab7b7e1312eb6f9d6266daa541dbc9c1df39b51ba999c"
+  },
+  {
+    "step": 4,
+    "batch_indices": [
+      7,
+      14,
+      12,
+      5
+    ],
+    "noise_rng_before": "4929ef76be48c866a412e43779728d506abb1c1455cad8e9cdfc49e5eb6dc73b"
+  }
+]

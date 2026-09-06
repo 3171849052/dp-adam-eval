@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "paired_initialization": true,
+  "paired_batch_order_and_noise_rng": true,
+  "all_four_layers": true,
+  "figures": 9,
+  "rows": {
+    "train": 8,
+    "refresh": 16,
+    "oracle": 16
+  }
+}
