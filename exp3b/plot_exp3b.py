@@ -40,17 +40,32 @@ def _trajectory_plot(frame, metric, path, title, ylabel=None, highlight=False):
 
 def _contrib_plot(frame, method, path):
     group = frame[frame.method == method]
-    mean = group.groupby("step")[ [f"contrib_{layer}" for layer in LAYERS] ].mean().sort_index()
+    mean = group.groupby("step")[ [f"share_{layer}" for layer in LAYERS] ].mean().sort_index()
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.stackplot(mean.index, *(mean[f"contrib_{layer}"] for layer in LAYERS),
+    ax.stackplot(mean.index, *(mean[f"share_{layer}"] for layer in LAYERS),
                  labels=LAYERS, colors=["#88CCEE", "#44AA99", "#DDCC77", "#CC6677"], alpha=.85)
     for seed in sorted(group.seed.unique()):
         trace = group[group.seed == seed]
-        ax.plot(trace.step, trace.contrib_fc1 + trace.contrib_fc2, color="black", alpha=.2, linewidth=.5)
-    ax.set(title=f"{LABELS[method]} pre-clipping energy allocation", xlabel="Private step", ylabel="Energy fraction")
+        ax.plot(trace.step, trace.share_fc1 + trace.share_fc2, color="black", alpha=.2, linewidth=.5)
+    ax.set(title=f"{LABELS[method]} epsilon-weighted normalized layer composition",
+           xlabel="Private step", ylabel="Normalized composition")
     ax.set_ylim(0, 1)
     ax.legend(fontsize=8, ncol=4)
     ax.grid(alpha=.15)
+    _save(fig, path)
+
+
+def _scatter_plot(frame, x, y, path, title):
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    for method in METHODS:
+        group = frame[frame.method == method]
+        for seed in sorted(group.seed.unique()):
+            trace = group[group.seed == seed]
+            ax.scatter(trace[x], trace[y], color=COLORS[method], alpha=.08, s=5)
+        ax.scatter(group[x].mean(), group[y].mean(), color=COLORS[method], label=LABELS[method], s=35)
+    ax.set(xlabel=x, ylabel=y, title=title)
+    ax.grid(alpha=.2)
+    ax.legend(fontsize=8)
     _save(fig, path)
 
 
@@ -67,21 +82,50 @@ def _coefficient_alpha_plot(frame, path):
         axes[0].plot(mean.index, mean.clipping_alpha_star, color=COLORS[method], linestyle="--", label=f"{LABELS[method]} alpha*", alpha=.8)
     axes[0].set_ylabel("value")
     axes[0].set_title("Scalar coefficient mean versus clipping alpha*")
+    axes[0].axhline(0, color="gray", linewidth=.8)
     axes[0].legend(fontsize=7, ncol=2)
     for method in METHODS:
         group = frame[frame.method == method]
         mean = group.groupby("step").alpha_over_mean_coeff.mean()
         axes[1].plot(mean.index, mean, color=COLORS[method], label=LABELS[method], linewidth=2)
     axes[1].axhline(1, color="gray", linewidth=.8)
+    axes[1].axhline(0, color="gray", linewidth=.8)
     axes[1].set(xlabel="Private step", ylabel="alpha*/coefficient mean", title="Scalar attenuation diagnostic")
     axes[1].grid(alpha=.2)
+    _save(fig, path)
+
+
+def _negative_alpha_fraction(frame, path):
+    rows = []
+    for method in METHODS:
+        group = frame[frame.method == method]
+        for window, (lo, hi) in {"early": (1, 200), "mid": (201, 585),
+                                 "late": (586, 1170), "all": (1, 1170)}.items():
+            selected = group[group.step.between(lo, hi)]
+            rows.append({"method": method, "window": window,
+                         "fraction": float((selected.clipping_alpha_star < 0).mean())})
+    summary = pd.DataFrame(rows)
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    x = np.arange(4)
+    width = .24
+    for i, method in enumerate(METHODS):
+        values = summary[summary.method == method].set_index("window").loc[
+            ["early", "mid", "late", "all"], "fraction"]
+        ax.bar(x + (i - 1) * width, values, width, color=COLORS[method], label=LABELS[method])
+    ax.set_xticks(x, ["early", "mid", "late", "all"])
+    ax.set(xlabel="Window", ylabel="Fraction of rows", title="Negative alpha* fraction")
+    ax.set_ylim(0, 1)
+    ax.grid(axis="y", alpha=.2)
+    ax.legend(fontsize=8)
     _save(fig, path)
 
 
 def _heatmap(results, path):
     main = pd.read_csv(Path(results) / "main_mechanism_table.csv")
     metrics = ["early_G_full", "late_G_full", "early_G_diag_fc", "late_G_diag_fc",
-               "late_fc_share", "late_layer_entropy", "late_norm_cv", "late_coefficient_cv",
+               "early_contrib_mass", "late_contrib_mass", "early_nearzero_mass_deficit",
+               "late_nearzero_mass_deficit", "late_fc_share", "late_layer_entropy",
+               "late_norm_cv", "late_coefficient_cv",
                "late_alpha_over_mean_coeff", "late_aggregate_cosine", "late_shape_error", "late_snr"]
     values = np.array([[row[f"{metric}_mean"] for metric in metrics] for _, row in main.iterrows()])
     scale = values.std(axis=0, ddof=1)
@@ -155,11 +199,19 @@ def plot(results=DEFAULT_RESULTS):
     _trajectory_plot(geometry, "G_full_new", figures / "08_G_full_new.png", "Full geometry ratio", highlight=True)
     _trajectory_plot(geometry, "G_diag_new", figures / "09_G_diag_new.png", "Diagonal geometry ratio")
     _coefficient_alpha_plot(trajectory, figures / "10_coefficient_mean_vs_alpha_star.png")
+    _negative_alpha_fraction(trajectory, figures / "11_negative_alpha_fraction.png")
     for i, metric in enumerate(("alpha_over_mean_coeff", "aggregate_cosine", "clipping_shape_error",
-                                 "clipped_aggregate_norm", "diagnostic_snr"), start=11):
+                                 "clipped_aggregate_norm", "diagnostic_snr"), start=12):
         _trajectory_plot(trajectory, metric, figures / f"{i:02d}_{metric}.png", metric)
-    _heatmap(results, figures / "16_mechanism_summary_heatmap.png")
-    _final_accuracy(trajectory, figures / "17_final_accuracy.png")
+    _trajectory_plot(trajectory, "contrib_mass", figures / "17_contrib_mass.png", "Epsilon-floored contribution mass")
+    _trajectory_plot(trajectory, "nearzero_mass_deficit", figures / "18_nearzero_mass_deficit.png",
+                     "Nearzero transformed-gradient mass deficit")
+    _scatter_plot(trajectory, "nearzero_mass_deficit", "norm_cv", figures / "19_nearzero_vs_norm_cv.png",
+                  "Nearzero mass deficit versus norm CV")
+    _scatter_plot(trajectory, "nearzero_mass_deficit", "coefficient_mean", figures / "20_nearzero_vs_coefficient_mean.png",
+                  "Nearzero mass deficit versus coefficient mean")
+    _heatmap(results, figures / "21_mechanism_summary_heatmap.png")
+    _final_accuracy(trajectory, figures / "22_final_accuracy.png")
     _deep_geometry_vs_energy(trajectory, geometry, figures / "deep_geometry_vs_energy.png")
     print(f"Exp3b figures written to {figures}")
 

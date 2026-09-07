@@ -15,12 +15,15 @@ from exp3b.common import (
     GEOMETRY_METRICS,
     LAYERS,
     METHODS,
+    SHARE_COLUMNS,
     SEEDS,
     add_derived_train_metrics,
     derive_geometry,
     require,
     source_manifest,
     source_manifest_digest,
+    validate_alpha_cosine_consistency,
+    validate_clipping_inputs,
     validate_contributions,
     validate_no_inferred_layer_snr,
     validate_source,
@@ -60,9 +63,18 @@ def validate(source=DEFAULT_SOURCE, results=DEFAULT_RESULTS):
     for (method, seed), group in trajectory.groupby(["method", "seed"], sort=True):
         require(group.step.tolist() == list(range(1, 1171)), f"Trajectory steps: {method}/{seed}")
         validate_contributions(group)
+        validate_clipping_inputs(group)
+        validate_alpha_cosine_consistency(group)
         require(np.isfinite(group[ENERGY_METRICS + CLIPPING_METRICS].to_numpy(dtype=float)).all(),
                 f"Nonfinite trajectory derived metrics: {method}/{seed}")
-        require((group["alpha_over_mean_coeff"] >= 0).all(), "Invalid alpha ratio")
+        require((group["contrib_mass"] > 0).all() and (group["contrib_mass"] <= 1 + 1e-5).all(),
+                f"Invalid contribution mass: {method}/{seed}")
+        require((group["nearzero_mass_deficit"] >= 0).all(), "Negative nearzero mass deficit")
+        require((group[SHARE_COLUMNS] >= 0).all().all(), "Negative normalized share")
+        require(np.all(np.abs(group[SHARE_COLUMNS].sum(axis=1) - 1) < 1e-8),
+                f"Normalized shares do not sum to one: {method}/{seed}")
+        require(np.isfinite(group["alpha_over_mean_coeff"].to_numpy(dtype=float)).all(),
+                "Nonfinite alpha ratio")
 
     require(len(geometry) == 9 * 24, "Geometry row count")
     require(set(GEOMETRY_METRICS) <= set(geometry.columns), "Geometry metrics missing")
@@ -74,6 +86,9 @@ def validate(source=DEFAULT_SOURCE, results=DEFAULT_RESULTS):
         require(set(group.step) == set(range(0, 1170, 50)), f"Geometry steps: {method}/{seed}")
 
     require(set(main.method) == set(METHODS) and len(main) == 3, "Main mechanism table")
+    require(set("early_contrib_mass_mean late_contrib_mass_mean early_nearzero_mass_deficit_mean "
+                "late_nearzero_mass_deficit_mean early_fc_share_mean late_fc_share_mean".split()) <= set(main.columns),
+            "Main contribution mechanism columns")
     require(set(early_late.method) == set(METHODS) and set(early_late.seed) == set(SEEDS),
             "Early/late geometry labels")
     require(len(early_late) == 9, "Early/late geometry row count")
@@ -85,6 +100,14 @@ def validate(source=DEFAULT_SOURCE, results=DEFAULT_RESULTS):
 
     after = source_manifest(source)
     require(before == after, "Exp3 source changed during Exp3b validation")
+    diagnostics = []
+    for method, group in trajectory.groupby("method", sort=True):
+        late = group[group.step >= 586]
+        diagnostics.append({"method": method,
+                            "min_contrib_mass": float(group.contrib_mass.min()),
+                            "median_contrib_mass": float(group.contrib_mass.median()),
+                            "late_median_contrib_mass": float(late.contrib_mass.median()),
+                            "max_nearzero_mass_deficit": float(group.nearzero_mass_deficit.max())})
     result = {
         "passed": True,
         "source": str(source),
@@ -100,6 +123,7 @@ def validate(source=DEFAULT_SOURCE, results=DEFAULT_RESULTS):
         "upstream_origin": bundle["provenance"].get("upstream_origin"),
         "no_source_mutation": True,
         "no_layerwise_snr_inferred": True,
+        "contrib_mass_diagnostic": diagnostics,
         "auc_definition": "mean over discrete oracle-point log ratios; no continuous integration",
     }
     write_json(results / "validation.json", result)

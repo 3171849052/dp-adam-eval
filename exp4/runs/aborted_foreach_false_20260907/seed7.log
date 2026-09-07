@@ -1,0 +1,25 @@
+/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/opacus/accountants/analysis/rdp.py:332: UserWarning: Optimal order is the largest alpha. Please consider expanding the range of alphas to get a tighter privacy bound.
+  warnings.warn(
+sys:1: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+seed=7 adam step=100/1170 loss=0.1551 accuracy=0.9468
+seed=7 adam step=200/1170 loss=0.1044 accuracy=0.9741
+seed=7 adam step=300/1170 loss=0.0866 accuracy=0.9813
+seed=7 adam step=400/1170 loss=0.0197 accuracy=0.9821
+seed=7 adam step=500/1170 loss=0.0354 accuracy=0.9862
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 169, in <module>
+    main()
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 165, in main
+    train(c, seed, trajectory, a.output)
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 90, in train
+    loss.backward()
+  File "/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/torch/_tensor.py", line 623, in backward
+    torch.autograd.backward(
+  File "/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/torch/autograd/__init__.py", line 395, in backward
+    _engine_run_backward(
+  File "/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/torch/autograd/graph.py", line 979, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

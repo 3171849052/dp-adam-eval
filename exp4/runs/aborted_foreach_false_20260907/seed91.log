@@ -1,0 +1,30 @@
+/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/opacus/accountants/analysis/rdp.py:332: UserWarning: Optimal order is the largest alpha. Please consider expanding the range of alphas to get a tighter privacy bound.
+  warnings.warn(
+sys:1: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+seed=91 adam step=100/1170 loss=0.1779 accuracy=0.9516
+seed=91 adam step=200/1170 loss=0.0911 accuracy=0.9724
+seed=91 adam step=300/1170 loss=0.0518 accuracy=0.9803
+seed=91 adam step=400/1170 loss=0.0606 accuracy=0.9833
+seed=91 adam step=500/1170 loss=0.0722 accuracy=0.9861
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 169, in <module>
+    main()
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 165, in main
+    train(c, seed, trajectory, a.output)
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 103, in train
+    syn = aggregate(model, active, syn_noise_rng, sigma, c, len(x))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/media/data/data/lt/dp-adam-eval/exp4/dynamics.py", line 51, in aggregate
+    clip_and_noise_gradients(model, sigma, c['max_grad_norm'], b, store_summed_grad=True)
+  File "/media/data/data/lt/DP-KFC/src/dp_kfac/privacy.py", line 20, in clip_and_noise_gradients
+    total_norm_sq = _compute_per_sample_norms_squared(params, batch_size, device)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/media/data/data/lt/DP-KFC/src/dp_kfac/privacy.py", line 62, in _compute_per_sample_norms_squared
+    total_norm_sq += grad_sample.norm(2, dim=1).pow(2)
+    ^^^^^^^^^^^^^
+KeyboardInterrupt

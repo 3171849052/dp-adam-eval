@@ -1,0 +1,22 @@
+/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/opacus/accountants/analysis/rdp.py:332: UserWarning: Optimal order is the largest alpha. Please consider expanding the range of alphas to get a tighter privacy bound.
+  warnings.warn(
+sys:1: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+seed=42 adam step=100/1170 loss=0.2184 accuracy=0.9455
+seed=42 adam step=200/1170 loss=0.0926 accuracy=0.9702
+seed=42 adam step=300/1170 loss=0.0878 accuracy=0.9775
+seed=42 adam step=400/1170 loss=0.0591 accuracy=0.9756
+seed=42 adam step=500/1170 loss=0.0239 accuracy=0.9836
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 169, in <module>
+    main()
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 165, in main
+    train(c, seed, trajectory, a.output)
+  File "/media/data/data/lt/dp-adam-eval/exp4/train_exp4.py", line 82, in train
+    synthetic.append(dict(step=step, preconditioner_hash=digest(active[1].values()), **audit))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/media/data/data/lt/dp-adam-eval/exp3/common.py", line 61, in digest
+    h.update(t.detach().cpu().contiguous().numpy().tobytes())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

@@ -27,12 +27,13 @@ ORACLE_WINDOWS = {
     "all": (0, 1170),
 }
 CONTRIB_COLUMNS = [f"contrib_{layer}" for layer in LAYERS]
-ENERGY_METRICS = CONTRIB_COLUMNS + [
+SHARE_COLUMNS = [f"share_{layer}" for layer in LAYERS]
+ENERGY_METRICS = CONTRIB_COLUMNS + ["contrib_mass", "nearzero_mass_deficit"] + SHARE_COLUMNS + [
     "conv_share", "fc_share", "fc_to_conv", "fc2_to_fc1", "layer_hhi", "layer_entropy"
 ]
 CLIPPING_METRICS = [
     "coefficient_mean", "coefficient_cv", "clipping_alpha_star", "alpha_over_mean_coeff",
-    "log_alpha_over_mean_coeff", "aggregate_cosine", "clipping_shape_error",
+    "alpha_negative", "aggregate_cosine", "clipping_shape_error",
     "relative_distortion", "clipped_aggregate_norm", "diagnostic_snr", "norm_mean", "norm_cv",
 ]
 GEOMETRY_METRICS = [
@@ -93,25 +94,35 @@ def _check_tagged_frame(frame, seed, method, fingerprint, name):
 
 
 def validate_contributions(frame):
-    """Validate per-example energy fractions without interpreting their utility."""
+    """Validate epsilon-floored per-example contribution averages."""
     require(set(CONTRIB_COLUMNS) <= set(frame.columns), "Missing contribution columns")
     values = frame[CONTRIB_COLUMNS].to_numpy(dtype=float)
     require(np.isfinite(values).all(), "Contribution values must be finite")
     require((values >= 0).all(), "Contribution values must be nonnegative")
-    max_deviation = float(np.max(np.abs(values.sum(axis=1) - 1)))
-    require(max_deviation < 1e-4,
-            f"Contribution fractions do not sum to one; max deviation={max_deviation:.6g}")
-    return True
+    mass = values.sum(axis=1)
+    require((mass > 0).all(), "Contribution mass must be positive")
+    require((mass <= 1 + 1e-5).all(), "Contribution mass exceeds one beyond tolerance")
+    return mass
 
 
 def validate_clipping_inputs(frame):
-    required = ("coefficient_mean", "clipping_alpha_star")
+    required = ("coefficient_mean", "clipping_alpha_star", "aggregate_cosine", "clipping_shape_error")
     require(set(required) <= set(frame.columns), "Missing clipping inputs")
     for column in required:
         values = frame[column].to_numpy(dtype=float)
         require(np.isfinite(values).all(), f"Nonfinite {column}")
     require((frame["coefficient_mean"] > 0).all(), "coefficient_mean must be positive")
-    require((frame["clipping_alpha_star"] >= 0).all(), "clipping_alpha_star must be nonnegative")
+    require((frame["clipping_shape_error"] >= 0).all(), "clipping_shape_error must be nonnegative")
+    require((frame["aggregate_cosine"].abs() <= 1 + 1e-12).all(), "aggregate_cosine outside [-1,1]")
+
+
+def validate_alpha_cosine_consistency(frame, tol=1e-12):
+    """Check signed projection and cosine signs without imposing alpha >= 0."""
+    alpha = frame["clipping_alpha_star"].to_numpy(dtype=float)
+    cosine = frame["aggregate_cosine"].to_numpy(dtype=float)
+    mask = (np.abs(alpha) > tol) & (np.abs(cosine) > tol)
+    require(np.all(np.sign(alpha[mask]) == np.sign(cosine[mask])),
+            "alpha_star and aggregate_cosine signs disagree")
 
 
 def validate_no_inferred_layer_snr(columns):
@@ -164,6 +175,7 @@ def validate_source(source):
                     f"Train steps mismatch: {root}")
             validate_contributions(train)
             validate_clipping_inputs(train)
+            validate_alpha_cosine_consistency(train)
             required_oracle = {"step", "layer", "R_diag_new", "R_full_new"}
             require(required_oracle <= set(oracle.columns), f"Oracle columns missing: {root}")
             _check_tagged_frame(oracle, seed, method, fingerprint, f"{root}/oracle_metrics.csv")
@@ -198,18 +210,29 @@ def validate_source(source):
 
 
 def add_derived_train_metrics(train):
-    """Add descriptive layer-energy and scalar clipping diagnostics."""
-    validate_contributions(train)
+    """Add epsilon-weighted layer composition and clipping diagnostics."""
+    mass = validate_contributions(train)
     validate_clipping_inputs(train)
+    validate_alpha_cosine_consistency(train)
     result = train.copy()
-    result["conv_share"] = result["contrib_conv1"] + result["contrib_conv2"]
-    result["fc_share"] = result["contrib_fc1"] + result["contrib_fc2"]
+    result["contrib_mass"] = mass
+    deficit = 1 - mass
+    require((deficit >= -1e-5).all(), "nearzero mass deficit is below tolerance")
+    result["nearzero_mass_deficit"] = np.where(deficit < 0, 0., deficit)
+    for raw, share in zip(CONTRIB_COLUMNS, SHARE_COLUMNS):
+        result[share] = result[raw] / result["contrib_mass"]
+    require(np.isfinite(result[SHARE_COLUMNS].to_numpy(dtype=float)).all(), "Nonfinite normalized share")
+    require((result[SHARE_COLUMNS] >= 0).all().all(), "Normalized shares must be nonnegative")
+    require(np.all(np.abs(result[SHARE_COLUMNS].sum(axis=1) - 1) < 1e-8),
+            "Normalized shares do not sum to one")
+    result["conv_share"] = result["share_conv1"] + result["share_conv2"]
+    result["fc_share"] = result["share_fc1"] + result["share_fc2"]
     result["fc_to_conv"] = result["fc_share"] / (result["conv_share"] + EPS)
-    result["fc2_to_fc1"] = result["contrib_fc2"] / (result["contrib_fc1"] + EPS)
-    result["layer_hhi"] = result[CONTRIB_COLUMNS].pow(2).sum(axis=1)
-    result["layer_entropy"] = -(result[CONTRIB_COLUMNS] * np.log(result[CONTRIB_COLUMNS] + EPS)).sum(axis=1) / math.log(4)
+    result["fc2_to_fc1"] = result["share_fc2"] / (result["share_fc1"] + EPS)
+    result["layer_hhi"] = result[SHARE_COLUMNS].pow(2).sum(axis=1)
+    result["layer_entropy"] = -(result[SHARE_COLUMNS] * np.log(result[SHARE_COLUMNS] + EPS)).sum(axis=1) / math.log(4)
     result["alpha_over_mean_coeff"] = result["clipping_alpha_star"] / (result["coefficient_mean"] + EPS)
-    result["log_alpha_over_mean_coeff"] = np.log(result["alpha_over_mean_coeff"] + EPS)
+    result["alpha_negative"] = (result["clipping_alpha_star"] < 0).astype(int)
     validate_no_inferred_layer_snr(result.columns)
     require(np.isfinite(result[ENERGY_METRICS + CLIPPING_METRICS].to_numpy(dtype=float)).all(),
             "Nonfinite derived train metric")
@@ -272,6 +295,29 @@ def window_summary(frame, metrics, oracle=False):
                 rows.append({"method": method, "seed": int(seed), "window": window,
                              "metric": metric, "median": float(median), "q25": float(q25),
                              "q75": float(q75), "iqr": float(q75 - q25), "n": len(values)})
+    return pd.DataFrame(rows)
+
+
+def alpha_negative_summary(frame):
+    """Summarize negative signed projections and conditional diagnostics."""
+    rows = []
+    for (method, seed), group in frame.groupby(["method", "seed"], sort=True):
+        for window in ("early", "mid", "late", "all"):
+            selected = group.loc[window_mask(group, window, oracle=False)]
+            require(len(selected) > 0, f"Empty alpha window for {method}/{seed}/{window}")
+            negative = selected[selected["clipping_alpha_star"] < 0]
+            count = len(negative)
+            row = {"method": method, "seed": int(seed), "window": window,
+                   "alpha_negative_count": count,
+                   "alpha_negative_fraction": float(count / len(selected)),
+                   "negative_aggregate_cosine_median": np.nan,
+                   "negative_clipping_shape_error_median": np.nan,
+                   "negative_norm_cv_median": np.nan,
+                   "negative_coefficient_cv_median": np.nan}
+            if count:
+                for column in ("aggregate_cosine", "clipping_shape_error", "norm_cv", "coefficient_cv"):
+                    row[f"negative_{column}_median"] = float(negative[column].median())
+            rows.append(row)
     return pd.DataFrame(rows)
 
 

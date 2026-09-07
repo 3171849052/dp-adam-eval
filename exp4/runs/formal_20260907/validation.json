@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "runs": 6,
+  "steps": 7020,
+  "seeds": [
+    42,
+    7,
+    91
+  ],
+  "source_matches_current_checkout": true,
+  "pairing": "batch, synthetic samples/labels/RNG, Gaussian z hashes all matched"
+}

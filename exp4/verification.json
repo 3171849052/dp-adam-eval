@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "pytest": "10 passed",
+  "devices": [
+    "cpu",
+    "cuda"
+  ],
+  "checks": [
+    "Adam exact next-step equivalence against default torch.optim.Adam",
+    "DP-Adam exact next-step equivalence and persistent moments",
+    "All-shadow diagnostic on/off per-step reference model and RNG isolation",
+    "Current-noise-off optimizer state, model and RNG isolation",
+    "SynDiag per-example second moment and upstream SGD step equivalence",
+    "Cross-trajectory batch and synthetic pairing",
+    "Shared Gaussian z hash",
+    "Refresh before private batch read and frozen P across epochs",
+    "Late seed medians followed by sample SD",
+    "Reject corrupted pairing before summary"
+  ],
+  "test_log_sha256": "93bae677f0d2234240a74be0c48434b21d14942df8ead94d1cbaa71d7c38e858",
+  "command": "CUBLAS_WORKSPACE_CONFIG=:4096:8 python -m pytest exp4/tests -q"
+}

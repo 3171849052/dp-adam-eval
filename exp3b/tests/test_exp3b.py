@@ -11,6 +11,7 @@ from exp3b.common import (
     SEEDS,
     across_seed_mean_std,
     add_derived_train_metrics,
+    correlation_summary,
     derive_geometry,
     geometry_auc_summary,
     geometric_mean,
@@ -18,6 +19,8 @@ from exp3b.common import (
     require,
     spearman,
     validate_contributions,
+    validate_alpha_cosine_consistency,
+    alpha_negative_summary,
     validate_no_inferred_layer_snr,
     validate_source,
     window_mask,
@@ -47,11 +50,18 @@ def geometry_frame():
 
 
 def test_contribution_sum_validation():
-    assert validate_contributions(train_frame())
+    mass = validate_contributions(train_frame())
+    assert np.allclose(mass, 1.)
     bad = train_frame()
     bad.loc[0, "contrib_fc1"] = .9
-    with pytest.raises(ValueError, match="sum"):
+    with pytest.raises(ValueError, match="exceeds one"):
         validate_contributions(bad)
+
+
+def test_contribution_sum_below_one_is_legal():
+    frame = train_frame()
+    frame[CONTRIB_COLUMNS] *= .5
+    assert np.allclose(validate_contributions(frame), .5)
 
 
 def test_fc_share():
@@ -61,17 +71,33 @@ def test_fc_share():
 
 
 def test_fc_to_conv():
-    result = add_derived_train_metrics(train_frame())
+    frame = train_frame()
+    frame[CONTRIB_COLUMNS] *= .5
+    result = add_derived_train_metrics(frame)
     assert result.loc[0, "fc_to_conv"] == pytest.approx(7 / 3)
 
 
+def test_normalized_share_sum_and_conv_fc_shares():
+    frame = train_frame()
+    frame[CONTRIB_COLUMNS] *= .5
+    result = add_derived_train_metrics(frame)
+    assert result.loc[0, "contrib_mass"] == pytest.approx(.5)
+    assert result.loc[0, ["share_conv1", "share_conv2", "share_fc1", "share_fc2"]].sum() == pytest.approx(1.)
+    assert result.loc[0, "conv_share"] == pytest.approx(.3)
+    assert result.loc[0, "fc_share"] == pytest.approx(.7)
+
+
 def test_hhi():
-    result = add_derived_train_metrics(train_frame())
+    frame = train_frame()
+    frame[CONTRIB_COLUMNS] *= .5
+    result = add_derived_train_metrics(frame)
     assert result.loc[0, "layer_hhi"] == pytest.approx(.3)
 
 
 def test_normalized_entropy():
-    result = add_derived_train_metrics(train_frame())
+    frame = train_frame()
+    frame[CONTRIB_COLUMNS] *= .5
+    result = add_derived_train_metrics(frame)
     expected = -sum(x * np.log(x + 1e-12) for x in [.1, .2, .3, .4]) / np.log(4)
     assert result.loc[0, "layer_entropy"] == pytest.approx(expected)
 
@@ -123,6 +149,64 @@ def test_alpha_ratio():
     assert result.loc[0, "alpha_over_mean_coeff"] == pytest.approx(.5)
 
 
+@pytest.mark.parametrize("alpha", [1., 0., -1.])
+def test_signed_alpha_is_legal(alpha):
+    frame = train_frame()
+    frame["clipping_alpha_star"] = alpha
+    frame["aggregate_cosine"] = np.sign(alpha) * .8 if alpha else 0.
+    result = add_derived_train_metrics(frame)
+    assert np.allclose(result["alpha_over_mean_coeff"], alpha / 2.)
+
+
+@pytest.mark.parametrize("alpha", [np.nan, np.inf, -np.inf])
+def test_nonfinite_alpha_rejected(alpha):
+    frame = train_frame()
+    frame.loc[0, "clipping_alpha_star"] = alpha
+    with pytest.raises(ValueError, match="Nonfinite clipping_alpha_star"):
+        add_derived_train_metrics(frame)
+
+
+@pytest.mark.parametrize("alpha,cosine,passes", [
+    (-.5, -.2, True), (-.5, .2, False), (.5, -.2, False),
+])
+def test_alpha_cosine_sign_consistency(alpha, cosine, passes):
+    frame = train_frame(steps=(1,))
+    frame.loc[0, "clipping_alpha_star"] = alpha
+    frame.loc[0, "aggregate_cosine"] = cosine
+    if passes:
+        validate_alpha_cosine_consistency(frame)
+    else:
+        with pytest.raises(ValueError, match="signs disagree"):
+            validate_alpha_cosine_consistency(frame)
+
+
+def test_alpha_negative_fraction_and_na_conditional_summary():
+    frame = train_frame(steps=(1, 201, 586, 1170))
+    frame["clipping_alpha_star"] = [0., 1., 0., 0.]
+    frame["aggregate_cosine"] = [0., .8, 0., 0.]
+    result = alpha_negative_summary(frame)
+    row = result[(result.window == "early")].iloc[0]
+    assert row.alpha_negative_fraction == pytest.approx(0.)
+    assert row.alpha_negative_count == 0
+    assert np.isnan(row.negative_aggregate_cosine_median)
+
+
+def test_nearzero_mass_deficit_and_exact_mass():
+    exact = add_derived_train_metrics(train_frame())
+    assert exact.loc[0, "nearzero_mass_deficit"] == pytest.approx(0.)
+    floored = train_frame()
+    floored[CONTRIB_COLUMNS] *= .2
+    result = add_derived_train_metrics(floored)
+    assert result.loc[0, "nearzero_mass_deficit"] == pytest.approx(.8)
+
+
+def test_zero_mass_rejected():
+    frame = train_frame()
+    frame[CONTRIB_COLUMNS] = 0.
+    with pytest.raises(ValueError, match="positive"):
+        add_derived_train_metrics(frame)
+
+
 def test_window_median_iqr():
     frame = pd.DataFrame(dict(method="dp_kfc", seed=42, step=list(range(1, 1171)),
                               x=np.linspace(1., 6., 1170)))
@@ -145,6 +229,14 @@ def test_paired_deltas():
 def test_spearman():
     assert spearman([1, 2, 3], [3, 2, 1]) == pytest.approx(-1.)
     assert np.isnan(spearman([1, 1], [1, 2]))
+
+
+def test_nearzero_temporal_correlation():
+    frame = train_frame(steps=range(1, 8))
+    frame["nearzero_mass_deficit"] = np.arange(len(frame), dtype=float)
+    frame["norm_cv"] = np.arange(len(frame), dtype=float)
+    result = correlation_summary(frame, ("nearzero_mass_deficit",), ("norm_cv",))
+    assert result.iloc[0]["rho"] == pytest.approx(1.)
 
 
 def test_n3_mean_std():

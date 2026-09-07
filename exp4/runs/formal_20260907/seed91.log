@@ -1,0 +1,30 @@
+/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/opacus/accountants/analysis/rdp.py:332: UserWarning: Optimal order is the largest alpha. Please consider expanding the range of alphas to get a tighter privacy bound.
+  warnings.warn(
+sys:1: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+seed=91 adam step=100/1170 loss=0.1781 accuracy=0.9513
+seed=91 adam step=200/1170 loss=0.0916 accuracy=0.9726
+seed=91 adam step=300/1170 loss=0.0524 accuracy=0.9808
+seed=91 adam step=400/1170 loss=0.0608 accuracy=0.9844
+seed=91 adam step=500/1170 loss=0.0716 accuracy=0.9858
+seed=91 adam step=600/1170 loss=0.0559 accuracy=0.9852
+seed=91 adam step=700/1170 loss=0.0551 accuracy=0.9865
+seed=91 adam step=800/1170 loss=0.0628 accuracy=0.9874
+seed=91 adam step=900/1170 loss=0.0184 accuracy=0.9899
+seed=91 adam step=1000/1170 loss=0.0320 accuracy=0.9853
+seed=91 adam step=1100/1170 loss=0.0127 accuracy=0.9893
+seed=91 adam step=1170/1170 loss=0.0415 accuracy=0.9897
+/home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/opacus/accountants/analysis/rdp.py:332: UserWarning: Optimal order is the largest alpha. Please consider expanding the range of alphas to get a tighter privacy bound.
+  warnings.warn(
+sys:1: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+seed=91 dp_adam step=100/1170 loss=0.8517 accuracy=0.7272
+seed=91 dp_adam step=200/1170 loss=0.6238 accuracy=0.8350
+seed=91 dp_adam step=300/1170 loss=0.5116 accuracy=0.8692
+seed=91 dp_adam step=400/1170 loss=0.4508 accuracy=0.8841
+seed=91 dp_adam step=500/1170 loss=0.6334 accuracy=0.8903
+seed=91 dp_adam step=600/1170 loss=0.3515 accuracy=0.8988
+seed=91 dp_adam step=700/1170 loss=0.3927 accuracy=0.9006
+seed=91 dp_adam step=800/1170 loss=0.5750 accuracy=0.9049
+seed=91 dp_adam step=900/1170 loss=0.4501 accuracy=0.9073
+seed=91 dp_adam step=1000/1170 loss=0.3932 accuracy=0.9087
+seed=91 dp_adam step=1100/1170 loss=0.3828 accuracy=0.9134
+seed=91 dp_adam step=1170/1170 loss=0.5562 accuracy=0.9134

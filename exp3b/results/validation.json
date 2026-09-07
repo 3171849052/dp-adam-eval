@@ -1,0 +1,48 @@
+{
+  "auc_definition": "mean over discrete oracle-point log ratios; no continuous integration",
+  "contrib_mass_diagnostic": [
+    {
+      "late_median_contrib_mass": 0.9588276669383048,
+      "max_nearzero_mass_deficit": 0.1917639421299102,
+      "median_contrib_mass": 0.9999999612846293,
+      "method": "dp_kfc",
+      "min_contrib_mass": 0.8082360578700898
+    },
+    {
+      "late_median_contrib_mass": 0.996100093005225,
+      "max_nearzero_mass_deficit": 0.0474797065835448,
+      "median_contrib_mass": 0.9999999757856128,
+      "method": "dp_sgd",
+      "min_contrib_mass": 0.9525202934164552
+    },
+    {
+      "late_median_contrib_mass": 0.9981043998850508,
+      "max_nearzero_mass_deficit": 0.0481272609322334,
+      "median_contrib_mass": 0.9999999864958224,
+      "method": "syn_diag",
+      "min_contrib_mass": 0.9518727390677666
+    }
+  ],
+  "methods": [
+    "dp_sgd",
+    "syn_diag",
+    "dp_kfc"
+  ],
+  "no_layerwise_snr_inferred": true,
+  "no_source_mutation": true,
+  "passed": true,
+  "results": "/media/data/data/lt/dp-adam-eval/exp3b/results",
+  "runs": 9,
+  "seeds": [
+    42,
+    7,
+    91
+  ],
+  "source": "/media/data/data/lt/dp-adam-eval/exp3/runs/formal_20260906_200824",
+  "source_config_fingerprint": "6fe427028c78c3809d02e88325a4f4fa4096caf5cdc4dd92d875cce0f9b848d2",
+  "source_manifest_sha256": "8f4ac9928d5c932082b12c82e0a65e5109a19a13ffab301b399a7419d3052c92",
+  "steps_per_run": 1170,
+  "upstream_git_commit": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
+  "upstream_git_dirty": false,
+  "upstream_origin": "https://github.com/molinamarcvdb/DP-KFC.git"
+}

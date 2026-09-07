@@ -1,0 +1,39 @@
+..........                                                               [100%]
+=============================== warnings summary ===============================
+exp4/tests/test_exp4.py::test_syndiag_equivalence_and_shared_noise[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+  /media/data/data/lt/dp-adam-eval/exp3/preconditioners.py:76: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+    y[start:start+c["analysis_batch_size"]].to(dev), reduction="sum").backward()
+
+exp4/tests/test_exp4.py::test_syndiag_equivalence_and_shared_noise[cpu]
+  /media/data/data/lt/dp-adam-eval/exp4/tests/test_exp4.py:91: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+    F.cross_entropy(model(x), y, reduction='sum').backward()
+
+exp4/tests/test_exp4.py::test_syndiag_equivalence_and_shared_noise[cuda]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cuda]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cuda]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cuda]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cuda]
+  sys:1: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cuda]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cuda]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cuda]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cuda]
+  /home/longt29/miniconda3/envs/curve/lib/python3.11/site-packages/opacus/accountants/analysis/rdp.py:332: UserWarning: Optimal order is the largest alpha. Please consider expanding the range of alphas to get a tighter privacy bound.
+    warnings.warn(
+
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+exp4/tests/test_exp4.py::test_diagnostic_isolation_pairing_and_refresh_causality[cpu]
+  /media/data/data/lt/dp-adam-eval/exp4/train_exp4.py:90: UserWarning: Full backward hook is firing when gradients are computed with respect to module outputs since no inputs require gradients. See https://docs.pytorch.org/docs/main/generated/torch.nn.Module.html#torch.nn.Module.register_full_backward_hook for more details.
+    loss.backward()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+10 passed, 21 warnings in 25.54s
