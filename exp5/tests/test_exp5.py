@@ -1,5 +1,6 @@
 import copy
 import json
+from contextlib import contextmanager
 
 import pytest
 import torch
@@ -68,6 +69,19 @@ def test_beta2_diagnostics_match_float64_log_rms_and_first_refresh_is_empty():
     expected_ema = ((current["conv1"].double() + 1e-12).log() - (old + 1e-12).log()).square().mean().sqrt()
     assert actual["conv1"]["beta2_D_innovation"] == pytest.approx(float(expected_innovation), rel=1e-12)
     assert actual["conv1"]["beta2_D_ema"] == pytest.approx(float(expected_ema), rel=1e-12)
+
+
+def test_beta2_diagnostics_is_bitwise_pure_for_all_inputs():
+    previous = {"conv1": torch.tensor([1., 2.]), "fc1": torch.tensor([4.])}
+    q = {"conv1": torch.tensor([2., 8.]), "fc1": torch.tensor([1.])}
+    current = {name: beta2_update(previous[name], q[name], .999, 7) for name in previous}
+    before = ({name: value.clone() for name, value in previous.items()},
+              {name: value.clone() for name, value in q.items()},
+              {name: value.clone() for name, value in current.items()})
+    beta2_diagnostics(previous, q, current, 1e-12)
+    for actual, expected in zip((previous, q, current), before):
+        for name in expected:
+            assert torch.equal(actual[name], expected[name])
 
 
 def test_state_bytes_uses_tensor_dtype_and_nested_state():
@@ -192,3 +206,111 @@ def test_six_method_pairing_and_diagnostics_isolation(tmp_path):
         on_audit = json.loads((tmp_path / "on" / "seed42" / method / "pairing.json").read_text())
         off_audit = json.loads((tmp_path / "off" / "seed42" / method / "pairing.json").read_text())
         assert [(x["batch_hash"], x["noise_hash"]) for x in on_audit["private"]] == [(x["batch_hash"], x["noise_hash"]) for x in off_audit["private"]]
+
+
+def _tiny_train_config():
+    return dict(DEFAULT, smoke=True, seeds=[42], device="cpu", threads=1,
+                batch_size=4, epochs=1, M_syn=4, K=1, M_oracle=4, M_stale=4,
+                analysis_batch_size=4, train_subset=4, test_subset=4,
+                eval_interval=1, diagnostic_interval=1, oracle_enabled=False)
+
+
+def _tiny_data():
+    return TensorDataset(torch.randn(4, 1, 28, 28), torch.arange(4) % 10)
+
+
+@pytest.mark.parametrize("method", ["syn_diag", "syn_diag_beta12", "dp_kfc_adam"])
+def test_refresh_events_precede_before_batch(tmp_path, method):
+    from exp5.train_exp5 import train
+
+    events = []
+    train(_tiny_train_config(), 42, method, tmp_path, (_tiny_data(), _tiny_data()),
+          event_hook=lambda kind, step, active: events.append(kind))
+    assert events == ["refresh_start", "refresh_end", "before_batch"]
+
+
+def test_dp_adam_has_no_refresh_events(tmp_path):
+    from exp5.train_exp5 import train
+
+    events = []
+    train(_tiny_train_config(), 42, "dp_adam", tmp_path, (_tiny_data(), _tiny_data()),
+          event_hook=lambda kind, step, active: events.append(kind))
+    assert events == ["before_batch"]
+
+
+def test_candidates_only_run_inside_diagnostics_and_not_when_disabled(tmp_path, monkeypatch):
+    import exp5.train_exp5 as train_module
+
+    data = (_tiny_data(), _tiny_data())
+    inside = [False]
+    calls = []
+    original_context = train_module.CostTracker.diagnostics
+    original_candidate = train_module.adam_candidate
+    original_advance = train_module.AdamDirection.advance
+    original_refresh = train_module.refresh_active
+
+    @contextmanager
+    def marked_diagnostics(self):
+        with original_context(self):
+            inside[0] = True
+            try:
+                yield
+            finally:
+                inside[0] = False
+
+    def marked_candidate(*args, **kwargs):
+        calls.append(("candidate", inside[0]))
+        return original_candidate(*args, **kwargs)
+
+    def marked_advance(self, *args, **kwargs):
+        calls.append(("adam_direction", inside[0]))
+        return original_advance(self, *args, **kwargs)
+
+    def marked_refresh(*args, **kwargs):
+        calls.append(("refresh", inside[0]))
+        return original_refresh(*args, **kwargs)
+
+    monkeypatch.setattr(train_module.CostTracker, "diagnostics", marked_diagnostics)
+    monkeypatch.setattr(train_module, "adam_candidate", marked_candidate)
+    monkeypatch.setattr(train_module.AdamDirection, "advance", marked_advance)
+    monkeypatch.setattr(train_module, "refresh_active", marked_refresh)
+
+    off = train_module.train(_tiny_train_config(), 42, "dp_adam", tmp_path / "off", data,
+                             diagnostics=False)
+    assert not [kind for kind, _ in calls if kind in ("candidate", "adam_direction")]
+    assert all(not in_context for kind, in_context in calls if kind == "refresh")
+
+    calls.clear()
+    on = train_module.train(_tiny_train_config(), 42, "syn_diag", tmp_path / "on", data,
+                            diagnostics=True)
+    assert [kind for kind, _ in calls if kind == "adam_direction"]
+    assert all(in_context for kind, in_context in calls if kind == "adam_direction")
+    assert all(not in_context for kind, in_context in calls if kind == "refresh")
+    assert on["diagnostic_seconds"] > 0
+    assert on["core_wall_time"] == pytest.approx(on["wall_time"] - on["diagnostic_seconds"])
+    assert off["final_model_hash"] == train_module.train(
+        _tiny_train_config(), 42, "dp_adam", tmp_path / "off_again", data, diagnostics=False
+    )["final_model_hash"]
+
+
+def test_report_aggregates_costs_across_seeds():
+    from exp5.analyze_exp5 import report
+
+    rows = []
+    for seed in (1, 2, 3):
+        for method in METHODS:
+            rows.append(dict(method=method, seed=seed, final_accuracy=.5,
+                             best_accuracy=.6, late_mean_accuracy=.55, final_test_loss=1.,
+                             wall_time=float(seed), core_wall_time=float(seed) / 2,
+                             diagnostic_seconds=float(seed) / 2, total_refresh_time=float(seed),
+                             mean_refresh_time=float(seed) / 2, peak_cuda_memory_core=seed,
+                             peak_cuda_memory_overall=seed, preconditioner_state_bytes=10,
+                             temporal_state_bytes=20, optimizer_state_bytes=30,
+                             total_algorithm_state_bytes=60))
+    import pandas as pd
+    per_seed = pd.DataFrame(rows)
+    contrasts = pd.DataFrame(columns=["seed", "mean", "std", "n", "contrast", "metric"])
+    text = report(per_seed, contrasts, {"smoke": False})
+    assert "2 +/- 1" in text
+    assert "Preconditioner bytes" in text
+    assert "| 10 | 20 | 30 | 60 |" in text

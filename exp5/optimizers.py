@@ -41,9 +41,12 @@ def beta2_diagnostics(previous, q, current, eps):
                 for name in q}
     result = {}
     for name in q:
-        old = previous[name].double()
-        innovation = (q[name].double().add(eps).log() - old.add(eps).log()).square().mean().sqrt()
-        ema = (current[name].double().add(eps).log() - old.add(eps).log()).square().mean().sqrt()
+        # Keep active state untouched while computing audit-only distances.
+        log_old = torch.log(previous[name].double() + eps)
+        log_q = torch.log(q[name].double() + eps)
+        log_current = torch.log(current[name].double() + eps)
+        innovation = (log_q - log_old).square().mean().sqrt()
+        ema = (log_current - log_old).square().mean().sqrt()
         result[name] = {"beta2_D_innovation": float(innovation), "beta2_D_ema": float(ema)}
     return result
 

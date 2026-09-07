@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from exp5.analyze_exp5 import load_runs
-from exp5.common import METHODS, ROOT, SYNTHETIC_METHODS, provenance, read_config, save_json
+from exp5.common import LAYERS, METHODS, ROOT, SYNTHETIC_METHODS, provenance, read_config, save_json
 
 
 def validate(c, runs, output):
@@ -63,12 +63,27 @@ def validate(c, runs, output):
 
         refresh = pd.read_csv(Path(path) / "refresh_metrics.csv")
         oracle = pd.read_csv(Path(path) / "oracle_metrics.csv")
+        for frame, name in ((refresh, "refresh"), (oracle, "oracle")):
+            for column in frame.select_dtypes(include=[np.number]).columns:
+                values = frame[column].dropna().to_numpy(dtype=float)
+                if not np.isfinite(values).all():
+                    raise ValueError(f"Nonfinite {name} metric: {path}/{column}")
         expected_refresh = list(range(0, total, c["K"])) if meta["method"] in SYNTHETIC_METHODS else []
         if sorted(refresh.step.unique().tolist()) != expected_refresh:
             raise ValueError(f"Refresh metrics schedule mismatch: {path}")
-        expected_oracle = list(range(0, total, c["K"]))
-        if sorted(oracle.step.unique().tolist()) != expected_oracle or len(oracle) != len(expected_oracle) * 4:
+        if len(refresh) != len(expected_refresh) * len(LAYERS):
+            raise ValueError(f"Refresh metrics row count mismatch: {path}")
+        if expected_refresh and set(refresh.layer) != set(LAYERS):
+            raise ValueError(f"Refresh metric layers mismatch: {path}")
+        if expected_refresh and not refresh.groupby("step").layer.nunique().eq(len(LAYERS)).all():
+            raise ValueError(f"Refresh metric layer coverage mismatch: {path}")
+        expected_oracle = list(range(0, total, c["K"])) if c["oracle_enabled"] else []
+        if sorted(oracle.step.unique().tolist()) != expected_oracle or len(oracle) != len(expected_oracle) * len(LAYERS):
             raise ValueError(f"Oracle metrics schedule mismatch: {path}")
+        if expected_oracle and set(oracle.layer) != set(LAYERS):
+            raise ValueError(f"Oracle metric layers mismatch: {path}")
+        if expected_oracle and not oracle.groupby("step").layer.nunique().eq(len(LAYERS)).all():
+            raise ValueError(f"Oracle metric layer coverage mismatch: {path}")
 
         beta2_on = meta["method"] in ("syn_diag_beta2", "syn_diag_beta12")
         beta2_columns = ["beta2_delta_t", "beta2_D_innovation", "beta2_D_ema"]
@@ -85,6 +100,10 @@ def validate(c, runs, output):
                     raise ValueError(f"beta2 delta_t mismatch: {path}")
                 if frame[["beta2_D_innovation", "beta2_D_ema"]].isna().any().any():
                     raise ValueError(f"Missing beta2 diagnostics: {path}")
+            if len(refresh_steps) > 1:
+                later = refresh[refresh.step != refresh_steps[0]]
+                if later[beta2_columns].isna().any().any():
+                    raise ValueError(f"Missing later beta2 diagnostics: {path}")
             for item in audit["synthetic"]:
                 if not item.get("q_hash") or not item.get("v_hash"):
                     raise ValueError(f"Missing beta2 q/v hash: {path}")

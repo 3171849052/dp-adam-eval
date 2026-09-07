@@ -172,14 +172,39 @@ def report(per_seed, contrasts, c):
         f = per_seed[per_seed.method == method]
         lines.append(f"| {method} | {f.final_accuracy.mean():.4f} | {f.best_accuracy.mean():.4f} | {f.late_mean_accuracy.mean():.4f} | {f.final_test_loss.mean():.4f} |")
     lines += ["", "## Cost and Algorithm State", "",
-              "| Method | Wall | Core wall | Diagnostics | Refresh | Preconditioner bytes | Temporal bytes | Optimizer bytes | Total state bytes |",
-              "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+              "| Method | Wall | Core wall | Diagnostics | Total refresh | Mean refresh | Core CUDA peak | Overall CUDA peak | Allocated peak | Reserved peak | Preconditioner bytes | Temporal bytes | Optimizer bytes | Total state bytes |",
+              "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+
+    def format_stat(frame, field):
+        if field not in frame:
+            return "N/A"
+        values = frame[field].dropna().astype(float).to_numpy()
+        if not len(values):
+            return "N/A"
+        mean = float(values.mean())
+        std = float(values.std(ddof=1)) if len(values) > 1 else None
+        return f"{mean:.4g}" if std is None else f"{mean:.4g} +/- {std:.4g}"
+
+    def format_state(frame, field):
+        values = frame[field].dropna().astype(float).to_numpy()
+        if not len(values):
+            return "N/A"
+        if len(np.unique(values)) == 1:
+            return str(int(values[0]))
+        mean = float(values.mean())
+        std = float(values.std(ddof=1)) if len(values) > 1 else None
+        return f"{mean:.4g}" if std is None else f"{mean:.4g} +/- {std:.4g}"
+
     for method in METHODS:
-        f = per_seed[per_seed.method == method].iloc[0]
-        lines.append("| {} | {:.4g} | {:.4g} | {:.4g} | {:.4g} | {} | {} | {} | {} |".format(
-            method, f.wall_time, f.core_wall_time, f.diagnostic_seconds, f.total_refresh_time,
-            int(f.preconditioner_state_bytes), int(f.temporal_state_bytes), int(f.optimizer_state_bytes),
-            int(f.total_algorithm_state_bytes)))
+        f = per_seed[per_seed.method == method]
+        lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+            method, format_stat(f, "wall_time"), format_stat(f, "core_wall_time"),
+            format_stat(f, "diagnostic_seconds"), format_stat(f, "total_refresh_time"),
+            format_stat(f, "mean_refresh_time"), format_stat(f, "peak_cuda_memory_core"),
+            format_stat(f, "peak_cuda_memory_overall"), format_stat(f, "peak_cuda_memory_allocated"),
+            format_stat(f, "peak_cuda_memory_reserved"), format_state(f, "preconditioner_state_bytes"),
+            format_state(f, "temporal_state_bytes"), format_state(f, "optimizer_state_bytes"),
+            format_state(f, "total_algorithm_state_bytes")))
     lines += ["", "## Paired Contrasts", "", "| Contrast | Metric | Mean | Sample SD | N |", "| --- | --- | ---: | ---: | ---: |"]
     for _, row in contrasts[contrasts.seed == "all"].iterrows():
         mean = "N/A" if pd.isna(row["mean"]) else f"{row['mean']:.6g}"

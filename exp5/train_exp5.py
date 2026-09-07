@@ -198,10 +198,12 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                     event("refresh_start")
                     # Refresh construction is algorithm work. Only the
                     # optional probes and geometry below belong to diagnostics.
+                    tracker.sync()
                     started = time.perf_counter()
                     samples, sample_audit = synthetic_samples(c, dev, syn_rng)
                     active, refresh_audit = refresh_active(model._module.state_dict(), samples, c, dev, method,
                                                           second_state=second_state, step=step)
+                    tracker.sync()
                     elapsed = time.perf_counter() - started
                     refresh_times.append(elapsed)
                     synthetic_audits.append(dict(step=step, **sample_audit, **refresh_audit))
@@ -261,29 +263,33 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                 row.update(after_noise(model, sigma, c, len(x)))
                 row["diagnostic_snr"] = row["clipped_aggregate_norm"] / (row["expected_noise_norm"] + c["eps_num"])
                 if diagnostics:
-                    adam_direction = shadow_adam.advance(raw)
-                else:
-                    adam_direction = None
-                if optimizer is not None:
-                    noisy_direction = adam_candidate(list(model.parameters()), optimizer, with_noise["noisy"], c["learning_rate"])
-                    clean_direction = adam_candidate(list(model.parameters()), optimizer, with_noise["clean"], c["learning_rate"])
-                elif first_state is not None:
-                    noisy_direction = first_state.peek(with_noise["noisy"])
-                    clean_direction = first_state.peek(with_noise["clean"])
-                else:
-                    noisy_direction = with_noise["noisy"]
-                    clean_direction = with_noise["clean"]
-                if diagnostics:
-                    row.update(direction_metrics(adam_direction, noisy_direction, clean_direction,
-                                                 {"raw_direction": clip_row["raw_direction"], "clean_direction": clip_row["clean_direction"]},
-                                                 "method"))
-                    diag_step = step == 0 or (step + 1) % c["diagnostic_interval"] == 0 or step + 1 == total
-                    row.update({f"loss_progress_{name}": None for name in ("adam", "method", "current_noise_off")})
-                    row.update({f"candidate_loss_{name}": None for name in ("adam", "method", "current_noise_off")})
-                    if diag_step:
-                        row.update(counterfactual(model, x, y,
-                                                  {"adam": adam_direction, "method": noisy_direction,
-                                                   "current_noise_off": clean_direction}, c))
+                    # Disposable references and counterfactuals belong to the
+                    # diagnostic segment and precede the official state commit.
+                    with tracker.diagnostics():
+                        adam_direction = shadow_adam.advance(raw)
+                        if optimizer is not None:
+                            noisy_direction = adam_candidate(list(model.parameters()), optimizer,
+                                                             with_noise["noisy"], c["learning_rate"])
+                            clean_direction = adam_candidate(list(model.parameters()), optimizer,
+                                                             with_noise["clean"], c["learning_rate"])
+                        elif first_state is not None:
+                            noisy_direction = first_state.peek(with_noise["noisy"])
+                            clean_direction = first_state.peek(with_noise["clean"])
+                        else:
+                            noisy_direction = with_noise["noisy"]
+                            clean_direction = with_noise["clean"]
+                        row.update(direction_metrics(
+                            adam_direction, noisy_direction, clean_direction,
+                            {"raw_direction": clip_row["raw_direction"],
+                             "clean_direction": clip_row["clean_direction"]}, "method"))
+                        diag_step = step == 0 or (step + 1) % c["diagnostic_interval"] == 0 or step + 1 == total
+                        row.update({f"loss_progress_{name}": None for name in ("adam", "method", "current_noise_off")})
+                        row.update({f"candidate_loss_{name}": None for name in ("adam", "method", "current_noise_off")})
+                        if diag_step:
+                            row.update(counterfactual(
+                                model, x, y,
+                                {"adam": adam_direction, "method": noisy_direction,
+                                 "current_noise_off": clean_direction}, c))
                 if optimizer is not None:
                     before = [p.detach().clone() for p in model.parameters()]
                     for p, g in zip(model.parameters(), with_noise["noisy"]):
@@ -296,7 +302,6 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                     else:
                         actual_direction = with_noise["noisy"]
                     apply_gradients(model.parameters(), actual_direction, c["learning_rate"])
-                    noisy_direction = actual_direction
                 update = direction_norm([p.detach() - old for p, old in zip(model.parameters(), before)])
                 row.update(update_norm=update, method_update_norm=update)
                 accountant.step(noise_multiplier=sigma, sample_rate=sample_rate)
