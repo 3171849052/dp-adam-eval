@@ -12,11 +12,11 @@ from opacus.accountants.utils import get_noise_multiplier
 from torch.utils.data import DataLoader, Subset
 
 from exp3.audit_upstream import require_pinned
+from exp3.common import generate_pink_noise
 from exp3.cost import CostTracker
 from exp3.geometry import diagnose, oracle_compare, stale
 from exp3.metrics import after_noise, before_clip
-from exp3.preconditioners import (apply, diagnostic_model, refresh, state_bytes,
-                                  synthetic_samples)
+from exp3.preconditioners import apply, diagnostic_model, refresh, state_bytes
 from exp4.dynamics import AdamDirection, aggregate
 from exp5.common import (DEFAULT, LAYERS, METHODS, ROOT, SYNTHETIC_METHODS,
                          Indexed, SimpleCNN, RNGStream, datasets, digest,
@@ -50,27 +50,55 @@ def synthetic_q(state, samples, c, dev):
     return {name: value / len(x) for name, value in sums.items()}
 
 
+def synthetic_samples(c, dev, rng, *, budget=None):
+    """Generate paired synthetic inputs without doing tensor audit hashing.
+
+    The hashes are mandatory pairing audit, but GPU-to-CPU copies belong to the
+    diagnostic segment.  Keep this generation protocol identical to the
+    upstream helper while returning only scalar generation metadata here.
+    """
+    budget = c["M_syn"] if budget is None else budget
+    before = rng.audit()
+    with rng.use():
+        batches = []
+        for start in range(0, budget, c["batch_size"]):
+            b = min(c["batch_size"], budget - start)
+            batches.append((generate_pink_noise(b, (1, 28, 28), dev),
+                            torch.randint(0, 10, (b,), device=dev)))
+    x, y = (torch.cat([batch[index] for batch in batches]) for index in (0, 1))
+    return (x, y), dict(rng_before=before, rng_after=rng.audit(), count=len(y))
+
+
+def synthetic_sample_audit(samples):
+    """Return scalar pairing hashes for already-generated synthetic samples."""
+    x, y = samples
+    return dict(samples_hash=digest([x]), labels_hash=digest([y]))
+
+
 def make_diagonal_p(q, c):
     return {name: (1. / (value.sqrt() + c["lambda"])).float() for name, value in q.items()}
 
 
-def refresh_active(model_state, samples, c, dev, method, second_state=None, step=0):
-    """Return active transform, serializable audit, and local beta2 payload."""
-    _, beta2_on = method_flags(method)
-    if method == "dp_kfc_adam":
-        return refresh(model_state, samples, c, dev, "dp_kfc"), {"kind": "kfac"}, None
-    if not beta2_on:
-        active = refresh(model_state, samples, c, dev, "syn_diag")
-        return active, {"kind": "q_current", "beta2_delta_t": None}, None
+def refresh_beta2_core_a(model_state, samples, c, dev, second_state, step):
+    """Run only synthetic q construction and the beta2 algorithm update."""
     q = synthetic_q(model_state, samples, c, dev)
     v, previous, delta_t = second_state.update(q, step)
-    audit = {
-        "kind": "q_ema", "beta2_delta_t": delta_t,
-        "q_hash": digest(q.values()), "v_hash": digest(v.values()),
-    }
-    # These tensors are deliberately returned separately from the audit and
-    # are consumed immediately by the diagnostics segment only.
-    return ("syn_diag", make_diagonal_p(v, c)), audit, (previous, q, v)
+    return q, v, previous, delta_t
+
+
+def refresh_beta2_core_b(second_state, c):
+    """Construct the active diagonal transform from persistent beta2 state."""
+    return "syn_diag", make_diagonal_p(second_state.v, c)
+
+
+def refresh_active(model_state, samples, c, dev, method, second_state=None, step=0):
+    """Refresh non-beta2 paths using only algorithm mathematics."""
+    _, beta2_on = method_flags(method)
+    if beta2_on:
+        raise ValueError("beta2 refreshes must use refresh_beta2_core_a/core_b")
+    if method == "dp_kfc_adam":
+        return refresh(model_state, samples, c, dev, "dp_kfc")
+    return refresh(model_state, samples, c, dev, "syn_diag")
 
 
 def cosine(a, b):
@@ -197,24 +225,65 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                 refresh_audit = None
                 if is_refresh:
                     event("refresh_start")
-                    # Refresh construction is algorithm work. Only the
-                    # optional probes and geometry below belong to diagnostics.
                     tracker.sync()
-                    started = time.perf_counter()
-                    samples, sample_audit = synthetic_samples(c, dev, syn_rng)
-                    active, refresh_audit, beta2_diag_payload = refresh_active(
-                        model._module.state_dict(), samples, c, dev, method,
-                        second_state=second_state, step=step)
+                    core_a_started = time.perf_counter()
+                    samples, sample_audit_core = synthetic_samples(c, dev, syn_rng)
+                    if beta2_on:
+                        q, v, previous, delta_t = refresh_beta2_core_a(
+                            model._module.state_dict(), samples, c, dev, second_state, step)
+                    else:
+                        active = refresh_active(
+                            model._module.state_dict(), samples, c, dev, method,
+                            second_state=second_state, step=step)
                     tracker.sync()
-                    elapsed = time.perf_counter() - started
-                    refresh_times.append(elapsed)
-                    synthetic_audits.append(dict(step=step, **sample_audit, **refresh_audit))
+                    core_a_seconds = time.perf_counter() - core_a_started
+                    beta2_metrics = None
+
+                    if beta2_on:
+                        event("beta2_core_a_end")
+                        with tracker.diagnostics():
+                            sample_audit = dict(sample_audit_core, **synthetic_sample_audit(samples))
+                            q_hash = digest(q.values())
+                            v_hash = digest(v.values())
+                            if diagnostics:
+                                beta2_metrics = beta2_diagnostics(
+                                    previous, q, v, c["eps_num"])
+                        event("beta2_diag_end")
+                        refresh_audit = {
+                            "kind": "q_ema", "beta2_delta_t": delta_t,
+                            "q_hash": q_hash, "v_hash": v_hash,
+                        }
+
+                        # q and previous are retained only for Phase B.  Drop
+                        # every non-persistent reference before constructing P.
+                        samples = None
+                        q = None
+                        previous = None
+                        v = None
+                        del samples, q, previous, v
+
+                        event("beta2_core_b_start")
+                        tracker.sync()
+                        core_b_started = time.perf_counter()
+                        active = refresh_beta2_core_b(second_state, c)
+                        tracker.sync()
+                        core_b_seconds = time.perf_counter() - core_b_started
+                        event("beta2_core_b_end")
+                        refresh_elapsed = core_a_seconds + core_b_seconds
+                    else:
+                        refresh_audit = ({"kind": "kfac"} if method == "dp_kfc_adam" else
+                                         {"kind": "q_current", "beta2_delta_t": None})
+                        with tracker.diagnostics():
+                            sample_audit = dict(sample_audit_core, **synthetic_sample_audit(samples))
+
+                        samples = None
+                        del samples
+                        refresh_elapsed = core_a_seconds
+
+                    # Stale/geometry work is diagnostic-only and follows all
+                    # official core refresh work, including beta2 Core B.
                     if diagnostics:
                         with tracker.diagnostics():
-                            beta2_metrics = None
-                            if beta2_diag_payload is not None:
-                                beta2_metrics = beta2_diagnostics(
-                                    *beta2_diag_payload, c["eps_num"])
                             transforms = {"new": active}
                             if old_active is not None:
                                 transforms["old"] = old_active
@@ -226,12 +295,12 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                                     beta2_fields = dict(beta2_delta_t=refresh_audit["beta2_delta_t"],
                                                         **beta2_metrics[layer])
                                 refresh_rows.append(dict(step=step, layer=layer, M_syn=c["M_syn"], M_stale=c["M_stale"],
-                                                         refresh_seconds=elapsed, preconditioner_state_bytes=state_bytes(active),
+                                                         refresh_seconds=refresh_elapsed, preconditioner_state_bytes=state_bytes(active),
                                                          **beta2_fields,
                                                          **stale(geom.get("old", {}).get(layer), geom["new"][layer])))
                             del probes, probe_audit, geom, transforms
-                    beta2_diag_payload = None
-                    del samples
+                    synthetic_audits.append(dict(step=step, **sample_audit, **refresh_audit))
+                    refresh_times.append(refresh_elapsed)
                     event("refresh_end")
                 if diagnostics and c["oracle_enabled"] and step % c["K"] == 0:
                     values = [data[int(i)] for i in oracle_ids]

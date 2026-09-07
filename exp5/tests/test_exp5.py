@@ -230,7 +230,12 @@ def test_refresh_events_precede_before_batch(tmp_path, method):
     events = []
     train(_tiny_train_config(), 42, method, tmp_path, (_tiny_data(), _tiny_data()),
           event_hook=lambda kind, step, active: events.append(kind))
-    assert events == ["refresh_start", "refresh_end", "before_batch"]
+    expected = ["refresh_start"]
+    if method == "syn_diag_beta12":
+        expected += ["beta2_core_a_end", "beta2_diag_end",
+                     "beta2_core_b_start", "beta2_core_b_end"]
+    expected += ["refresh_end", "before_batch"]
+    assert events == expected
 
 
 def test_dp_adam_has_no_refresh_events(tmp_path):
@@ -311,6 +316,198 @@ def test_candidates_only_run_inside_diagnostics_and_not_when_disabled(tmp_path, 
     assert off["final_model_hash"] == train_module.train(
         _tiny_train_config(), 42, "dp_adam", tmp_path / "off_again", data, diagnostics=False
     )["final_model_hash"]
+
+
+def test_beta2_core_b_has_no_diagnostic_only_tensor_references(tmp_path, monkeypatch):
+    import gc
+    import weakref
+    import exp5.train_exp5 as train_module
+
+    original_core_a = train_module.refresh_beta2_core_a
+    original_state = train_module.SecondMomentState
+    references = {"q": [], "previous": []}
+    states = []
+
+    def marked_core_a(*args, **kwargs):
+        q, v, previous, delta_t = original_core_a(*args, **kwargs)
+        references["q"].append([weakref.ref(value) for value in q.values()])
+        if previous is not None:
+            references["previous"].append([weakref.ref(value) for value in previous.values()])
+        return q, v, previous, delta_t
+
+    class TrackingSecondMomentState(original_state):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            states.append(self)
+
+    monkeypatch.setattr(train_module, "refresh_beta2_core_a", marked_core_a)
+    monkeypatch.setattr(train_module, "SecondMomentState", TrackingSecondMomentState)
+    events = []
+
+    def check_event(kind, step, active):
+        events.append(kind)
+        if kind == "beta2_core_b_start":
+            gc.collect()
+            assert states and set(vars(states[-1])) == {"beta2", "v", "last_refresh_step"}
+            assert all(all(reference() is None for reference in refs)
+                       for refs in references["q"] + references["previous"])
+
+    config = dict(_tiny_train_config(), epochs=2, K=1)
+    train_module.train(config, 42, "syn_diag_beta2", tmp_path, (_tiny_data(), _tiny_data()),
+                       event_hook=check_event)
+
+    assert events.count("beta2_core_b_start") == 2
+    assert states and all(set(vars(state)) == {"beta2", "v", "last_refresh_step"}
+                          for state in states)
+    assert all(all(reference() is None for reference in refs)
+               for refs in references["q"] + references["previous"])
+
+
+def test_beta2_hashes_and_metrics_are_diagnostic_only(tmp_path, monkeypatch):
+    import exp5.train_exp5 as train_module
+
+    inside = [False]
+    q_v_hash_contexts = []
+    metric_contexts = []
+    original_context = train_module.CostTracker.diagnostics
+    original_digest = train_module.digest
+    original_metrics = train_module.beta2_diagnostics
+    dict_values_type = type({}.values())
+
+    @contextmanager
+    def marked_diagnostics(self):
+        with original_context(self):
+            inside[0] = True
+            try:
+                yield
+            finally:
+                inside[0] = False
+
+    def marked_digest(values):
+        if isinstance(values, dict_values_type):
+            q_v_hash_contexts.append(inside[0])
+        return original_digest(values)
+
+    def marked_metrics(*args, **kwargs):
+        metric_contexts.append(inside[0])
+        return original_metrics(*args, **kwargs)
+
+    monkeypatch.setattr(train_module.CostTracker, "diagnostics", marked_diagnostics)
+    monkeypatch.setattr(train_module, "digest", marked_digest)
+    monkeypatch.setattr(train_module, "beta2_diagnostics", marked_metrics)
+    train_module.train(_tiny_train_config(), 42, "syn_diag_beta2", tmp_path / "on",
+                       (_tiny_data(), _tiny_data()), diagnostics=True)
+    train_module.train(_tiny_train_config(), 42, "syn_diag_beta2", tmp_path / "off",
+                       (_tiny_data(), _tiny_data()), diagnostics=False)
+
+    assert q_v_hash_contexts and all(q_v_hash_contexts)
+    assert metric_contexts and all(metric_contexts)
+
+
+def test_beta2_p_construction_is_core_after_payload_release(tmp_path, monkeypatch):
+    import gc
+    import weakref
+    import exp5.train_exp5 as train_module
+
+    inside = [False]
+    q_references = []
+    original_context = train_module.CostTracker.diagnostics
+    original_core_a = train_module.refresh_beta2_core_a
+    original_make_p = train_module.make_diagonal_p
+
+    @contextmanager
+    def marked_diagnostics(self):
+        with original_context(self):
+            inside[0] = True
+            try:
+                yield
+            finally:
+                inside[0] = False
+
+    def marked_core_a(*args, **kwargs):
+        q, v, previous, delta_t = original_core_a(*args, **kwargs)
+        q_references.append([weakref.ref(value) for value in q.values()])
+        return q, v, previous, delta_t
+
+    calls = []
+
+    def marked_make_p(q, c):
+        gc.collect()
+        calls.append(inside[0])
+        assert not inside[0]
+        assert all(reference() is None for refs in q_references for reference in refs)
+        return original_make_p(q, c)
+
+    monkeypatch.setattr(train_module.CostTracker, "diagnostics", marked_diagnostics)
+    monkeypatch.setattr(train_module, "refresh_beta2_core_a", marked_core_a)
+    monkeypatch.setattr(train_module, "make_diagonal_p", marked_make_p)
+    train_module.train(_tiny_train_config(), 42, "syn_diag_beta2", tmp_path,
+                       (_tiny_data(), _tiny_data()), diagnostics=True)
+    assert calls == [False]
+
+
+def test_beta2_refresh_seconds_are_core_a_plus_core_b(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import exp5.train_exp5 as train_module
+
+    clock_values = iter([0., 0., 0., 2., 2., 5., 400.])
+
+    @contextmanager
+    def simulated_diagnostics(self):
+        self.diagnostic_seconds += 100.
+        yield
+
+    monkeypatch.setattr(train_module.CostTracker, "diagnostics", simulated_diagnostics)
+    monkeypatch.setattr(train_module.time, "perf_counter", lambda: next(clock_values))
+    result = train_module.train(_tiny_train_config(), 42, "syn_diag_beta2", tmp_path,
+                                (_tiny_data(), _tiny_data()), diagnostics=True)
+    assert result["total_refresh_time"] == pytest.approx(5.)
+    assert result["core_wall_time"] == pytest.approx(100.)
+
+
+@pytest.mark.parametrize("method", ["syn_diag_beta2", "syn_diag_beta12"])
+def test_beta2_diagnostics_on_off_preserve_pairing_state_and_hashes(tmp_path, method):
+    from exp5.train_exp5 import train
+
+    data = (_tiny_data(), _tiny_data())
+    on = train(_tiny_train_config(), 42, method, tmp_path / "on", data, diagnostics=True)
+    off = train(_tiny_train_config(), 42, method, tmp_path / "off", data, diagnostics=False)
+    assert on["final_model_hash"] == off["final_model_hash"]
+    on_pairing = json.loads((tmp_path / "on" / "seed42" / method / "pairing.json").read_text())
+    off_pairing = json.loads((tmp_path / "off" / "seed42" / method / "pairing.json").read_text())
+    assert on_pairing["synthetic"] == off_pairing["synthetic"]
+    assert {key: on_pairing["synthetic"][0][key] for key in ("q_hash", "v_hash")} == {
+        key: off_pairing["synthetic"][0][key] for key in ("q_hash", "v_hash")}
+    on_state = torch.load(tmp_path / "on" / "seed42" / method / "final_state.pt", map_location="cpu")
+    off_state = torch.load(tmp_path / "off" / "seed42" / method / "final_state.pt", map_location="cpu")
+    for a, b in zip(on_state["second_moment"]["v"].values(), off_state["second_moment"]["v"].values()):
+        assert torch.equal(a, b)
+
+
+@pytest.mark.parametrize("method", ["syn_diag_beta2", "syn_diag_beta12"])
+def test_temporal_state_bytes_count_only_algorithm_moments(tmp_path, method):
+    from exp5.train_exp5 import state_bytes as tensor_state_bytes, train
+
+    train(_tiny_train_config(), 42, method, tmp_path, (_tiny_data(), _tiny_data()), diagnostics=True)
+    root = tmp_path / "seed42" / method
+    summary = json.loads((root / "summary.json").read_text())
+    checkpoint = torch.load(root / "final_state.pt", map_location="cpu")
+    expected = tensor_state_bytes(checkpoint["second_moment"]["v"])
+    if method == "syn_diag_beta12":
+        expected += tensor_state_bytes(checkpoint["first_moment"]["m"])
+    assert summary["temporal_state_bytes"] == expected
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+def test_cuda_tiny_beta12_training_covers_full_refresh_path(tmp_path):
+    from exp5.train_exp5 import train
+
+    result = train(dict(_tiny_train_config(), device="cuda"), 42, "syn_diag_beta12", tmp_path,
+                   (_tiny_data(), _tiny_data()), diagnostics=True)
+    assert result["completed_steps"] == 1
+    assert result["total_refresh_time"] > 0 and torch.isfinite(torch.tensor(result["total_refresh_time"]))
+    state = torch.load(tmp_path / "seed42" / "syn_diag_beta12" / "final_state.pt", map_location="cpu")
+    assert all(torch.isfinite(value).all() for value in state["model"].values())
 
 
 def test_report_aggregates_costs_across_seeds():
