@@ -75,20 +75,21 @@ class SecondMomentState:
         self.beta2 = beta2
         self.v = None
         self.last_refresh_step = None
-        self.last_previous = None
 
     def update(self, q, step):
-        previous = None if self.v is None else {name: value.detach().clone() for name, value in self.v.items()}
-        self.last_previous = previous
         if self.v is None:
+            previous = None
             self.v = {name: value.detach().clone() for name, value in q.items()}
             delta_t = None
         else:
+            # beta2_update returns new tensors, so the old dict can be held
+            # only as this call's local diagnostic reference.
+            previous = self.v
             delta_t = step - self.last_refresh_step
-            self.v = {name: beta2_update(self.v[name], value, self.beta2, delta_t)
+            self.v = {name: beta2_update(previous[name], value, self.beta2, delta_t)
                       for name, value in q.items()}
         self.last_refresh_step = step
-        return self.v, delta_t
+        return self.v, previous, delta_t
 
 
 def adam_optimizer(params, c):

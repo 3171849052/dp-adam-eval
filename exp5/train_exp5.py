@@ -55,21 +55,22 @@ def make_diagonal_p(q, c):
 
 
 def refresh_active(model_state, samples, c, dev, method, second_state=None, step=0):
-    """Return active transform plus an audit of the beta2 refresh state."""
+    """Return active transform, serializable audit, and local beta2 payload."""
     _, beta2_on = method_flags(method)
     if method == "dp_kfc_adam":
-        return refresh(model_state, samples, c, dev, "dp_kfc"), {"kind": "kfac"}
+        return refresh(model_state, samples, c, dev, "dp_kfc"), {"kind": "kfac"}, None
     if not beta2_on:
         active = refresh(model_state, samples, c, dev, "syn_diag")
-        return active, {"kind": "q_current", "beta2_delta_t": None}
+        return active, {"kind": "q_current", "beta2_delta_t": None}, None
     q = synthetic_q(model_state, samples, c, dev)
-    v, delta_t = second_state.update(q, step)
-    beta2_metrics = beta2_diagnostics(second_state.last_previous, q, v, c["eps_num"])
-    return ("syn_diag", make_diagonal_p(v, c)), {
+    v, previous, delta_t = second_state.update(q, step)
+    audit = {
         "kind": "q_ema", "beta2_delta_t": delta_t,
         "q_hash": digest(q.values()), "v_hash": digest(v.values()),
-        "beta2_metrics": beta2_metrics,
     }
+    # These tensors are deliberately returned separately from the audit and
+    # are consumed immediately by the diagnostics segment only.
+    return ("syn_diag", make_diagonal_p(v, c)), audit, (previous, q, v)
 
 
 def cosine(a, b):
@@ -201,14 +202,19 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                     tracker.sync()
                     started = time.perf_counter()
                     samples, sample_audit = synthetic_samples(c, dev, syn_rng)
-                    active, refresh_audit = refresh_active(model._module.state_dict(), samples, c, dev, method,
-                                                          second_state=second_state, step=step)
+                    active, refresh_audit, beta2_diag_payload = refresh_active(
+                        model._module.state_dict(), samples, c, dev, method,
+                        second_state=second_state, step=step)
                     tracker.sync()
                     elapsed = time.perf_counter() - started
                     refresh_times.append(elapsed)
                     synthetic_audits.append(dict(step=step, **sample_audit, **refresh_audit))
                     if diagnostics:
                         with tracker.diagnostics():
+                            beta2_metrics = None
+                            if beta2_diag_payload is not None:
+                                beta2_metrics = beta2_diagnostics(
+                                    *beta2_diag_payload, c["eps_num"])
                             transforms = {"new": active}
                             if old_active is not None:
                                 transforms["old"] = old_active
@@ -216,14 +222,15 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                             geom = diagnose(model._module.state_dict(), probes, transforms, c, dev, root)
                             for layer in LAYERS:
                                 beta2_fields = {}
-                                if refresh_audit.get("beta2_metrics") is not None:
+                                if beta2_metrics is not None:
                                     beta2_fields = dict(beta2_delta_t=refresh_audit["beta2_delta_t"],
-                                                        **refresh_audit["beta2_metrics"][layer])
+                                                        **beta2_metrics[layer])
                                 refresh_rows.append(dict(step=step, layer=layer, M_syn=c["M_syn"], M_stale=c["M_stale"],
                                                          refresh_seconds=elapsed, preconditioner_state_bytes=state_bytes(active),
                                                          **beta2_fields,
                                                          **stale(geom.get("old", {}).get(layer), geom["new"][layer])))
                             del probes, probe_audit, geom, transforms
+                    beta2_diag_payload = None
                     del samples
                     event("refresh_end")
                 if diagnostics and c["oracle_enabled"] and step % c["K"] == 0:

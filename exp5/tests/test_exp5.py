@@ -49,11 +49,15 @@ def test_beta2_uses_actual_refresh_gap_and_initializes_v_from_q0():
     q0 = torch.tensor([2.])
     q1 = torch.tensor([6.])
     state = SecondMomentState(.999)
-    v0, delta0 = state.update({"x": q0}, 0)
+    v0, previous0, delta0 = state.update({"x": q0}, 0)
     assert delta0 is None
+    assert previous0 is None
     torch.testing.assert_close(v0["x"], q0)
-    v1, delta1 = state.update({"x": q1}, 37)
+    old_v = v0
+    v1, previous1, delta1 = state.update({"x": q1}, 37)
     assert delta1 == 37
+    assert previous1["x"] is old_v["x"]
+    assert not hasattr(state, "last_previous")
     torch.testing.assert_close(v1["x"], beta2_update(q0, q1, .999, 37))
 
 
@@ -142,7 +146,7 @@ def test_beta2_off_is_direct_current_q_and_beta1_off_is_direct_direction():
     from exp5.train_exp5 import make_diagonal_p
     q = torch.tensor([3.])
     state = SecondMomentState(.999)
-    v, _ = state.update({"x": q}, 0)
+    v, _, _ = state.update({"x": q}, 0)
     torch.testing.assert_close(v["x"], q)
     p = make_diagonal_p({"x": q}, {"lambda": 1e-3})["x"]
     torch.testing.assert_close(p, 1 / (q.sqrt() + 1e-3))
@@ -248,6 +252,7 @@ def test_candidates_only_run_inside_diagnostics_and_not_when_disabled(tmp_path, 
     original_candidate = train_module.adam_candidate
     original_advance = train_module.AdamDirection.advance
     original_refresh = train_module.refresh_active
+    original_beta2_diagnostics = train_module.beta2_diagnostics
 
     @contextmanager
     def marked_diagnostics(self):
@@ -270,10 +275,15 @@ def test_candidates_only_run_inside_diagnostics_and_not_when_disabled(tmp_path, 
         calls.append(("refresh", inside[0]))
         return original_refresh(*args, **kwargs)
 
+    def marked_beta2_diagnostics(*args, **kwargs):
+        calls.append(("beta2_diagnostics", inside[0]))
+        return original_beta2_diagnostics(*args, **kwargs)
+
     monkeypatch.setattr(train_module.CostTracker, "diagnostics", marked_diagnostics)
     monkeypatch.setattr(train_module, "adam_candidate", marked_candidate)
     monkeypatch.setattr(train_module.AdamDirection, "advance", marked_advance)
     monkeypatch.setattr(train_module, "refresh_active", marked_refresh)
+    monkeypatch.setattr(train_module, "beta2_diagnostics", marked_beta2_diagnostics)
 
     off = train_module.train(_tiny_train_config(), 42, "dp_adam", tmp_path / "off", data,
                              diagnostics=False)
@@ -288,6 +298,16 @@ def test_candidates_only_run_inside_diagnostics_and_not_when_disabled(tmp_path, 
     assert all(not in_context for kind, in_context in calls if kind == "refresh")
     assert on["diagnostic_seconds"] > 0
     assert on["core_wall_time"] == pytest.approx(on["wall_time"] - on["diagnostic_seconds"])
+
+    calls.clear()
+    train_module.train(_tiny_train_config(), 42, "syn_diag_beta2", tmp_path / "beta2", data,
+                       diagnostics=True)
+    assert [kind for kind, _ in calls if kind == "beta2_diagnostics"]
+    assert all(in_context for kind, in_context in calls if kind == "beta2_diagnostics")
+    assert all(not in_context for kind, in_context in calls if kind == "refresh")
+    checkpoint = torch.load(tmp_path / "beta2" / "seed42" / "syn_diag_beta2" / "final_state.pt",
+                           map_location="cpu")
+    assert set(checkpoint["second_moment"]) == {"beta2", "last_refresh_step", "v"}
     assert off["final_model_hash"] == train_module.train(
         _tiny_train_config(), 42, "dp_adam", tmp_path / "off_again", data, diagnostics=False
     )["final_model_hash"]
