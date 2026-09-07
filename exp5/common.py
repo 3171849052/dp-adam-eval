@@ -95,11 +95,17 @@ def write_csv(path, rows, fields=None):
 
 
 def provenance():
+    local_dependencies = [
+        ROOT.parent / "exp3" / name for name in
+        ("audit_upstream.py", "cost.py", "geometry.py", "metrics.py", "preconditioners.py", "common.py")
+    ] + [ROOT.parent / "exp4" / name for name in ("common.py", "dynamics.py")]
     result = {f"upstream/{p.name}": hashlib.sha256(p.read_bytes()).hexdigest()
               for p in (REPO / "src/dp_kfac").glob("*.py")}
+    result.update({f"{p.parent.name}/{p.name}": hashlib.sha256(p.read_bytes()).hexdigest()
+                   for p in local_dependencies})
     result.update(checkout_info())
     result.update({f"exp5/{p.name}": hashlib.sha256(p.read_bytes()).hexdigest()
-                   for p in ROOT.glob("*.py") if p.name != "__init__.py"})
+                   for p in ROOT.glob("*.py")})
     return result
 
 

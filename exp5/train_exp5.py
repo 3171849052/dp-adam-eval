@@ -23,7 +23,8 @@ from exp5.common import (DEFAULT, LAYERS, METHODS, ROOT, SYNTHETIC_METHODS,
                          evaluate, fingerprint, provenance, read_config,
                          save_json, set_seed, write_csv)
 from exp5.optimizers import (FirstMomentState, SecondMomentState,
-                             adam_candidate, adam_optimizer, apply_gradients)
+                             adam_candidate, adam_optimizer, apply_gradients,
+                             beta2_diagnostics, state_bytes as tensor_state_bytes)
 
 
 def method_flags(method):
@@ -63,9 +64,11 @@ def refresh_active(model_state, samples, c, dev, method, second_state=None, step
         return active, {"kind": "q_current", "beta2_delta_t": None}
     q = synthetic_q(model_state, samples, c, dev)
     v, delta_t = second_state.update(q, step)
+    beta2_metrics = beta2_diagnostics(second_state.last_previous, q, v, c["eps_num"])
     return ("syn_diag", make_diagonal_p(v, c)), {
         "kind": "q_ema", "beta2_delta_t": delta_t,
         "q_hash": digest(q.values()), "v_hash": digest(v.values()),
+        "beta2_metrics": beta2_metrics,
     }
 
 
@@ -193,23 +196,30 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                 refresh_audit = None
                 if is_refresh:
                     event("refresh_start")
-                    with tracker.diagnostics() if diagnostics else _nullcontext():
-                        started = time.perf_counter()
-                        samples, sample_audit = synthetic_samples(c, dev, syn_rng)
-                        active, refresh_audit = refresh_active(model._module.state_dict(), samples, c, dev, method,
-                                                              second_state=second_state, step=step)
-                        elapsed = time.perf_counter() - started
-                        refresh_times.append(elapsed)
-                        synthetic_audits.append(dict(step=step, **sample_audit, **refresh_audit))
-                        if diagnostics:
+                    # Refresh construction is algorithm work. Only the
+                    # optional probes and geometry below belong to diagnostics.
+                    started = time.perf_counter()
+                    samples, sample_audit = synthetic_samples(c, dev, syn_rng)
+                    active, refresh_audit = refresh_active(model._module.state_dict(), samples, c, dev, method,
+                                                          second_state=second_state, step=step)
+                    elapsed = time.perf_counter() - started
+                    refresh_times.append(elapsed)
+                    synthetic_audits.append(dict(step=step, **sample_audit, **refresh_audit))
+                    if diagnostics:
+                        with tracker.diagnostics():
                             transforms = {"new": active}
                             if old_active is not None:
                                 transforms["old"] = old_active
                             probes, probe_audit = synthetic_samples(c, dev, stale_rng, budget=c["M_stale"])
                             geom = diagnose(model._module.state_dict(), probes, transforms, c, dev, root)
                             for layer in LAYERS:
+                                beta2_fields = {}
+                                if refresh_audit.get("beta2_metrics") is not None:
+                                    beta2_fields = dict(beta2_delta_t=refresh_audit["beta2_delta_t"],
+                                                        **refresh_audit["beta2_metrics"][layer])
                                 refresh_rows.append(dict(step=step, layer=layer, M_syn=c["M_syn"], M_stale=c["M_stale"],
                                                          refresh_seconds=elapsed, preconditioner_state_bytes=state_bytes(active),
+                                                         **beta2_fields,
                                                          **stale(geom.get("old", {}).get(layer), geom["new"][layer])))
                             del probes, probe_audit, geom, transforms
                     del samples
@@ -249,6 +259,7 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                 row.pop("raw_direction")
                 row.pop("clean_direction")
                 row.update(after_noise(model, sigma, c, len(x)))
+                row["diagnostic_snr"] = row["clipped_aggregate_norm"] / (row["expected_noise_norm"] + c["eps_num"])
                 if diagnostics:
                     adam_direction = shadow_adam.advance(raw)
                 else:
@@ -306,9 +317,18 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
         tracker.sync()
         acc = [r["test_accuracy"] for r in rows if r["test_accuracy"] is not None]
         late = [r["test_accuracy"] for r in rows if r["step"] > total / 2 and r["test_accuracy"] is not None]
+        preconditioner_state_bytes = state_bytes(active)
+        temporal_state_bytes = tensor_state_bytes(first_state.m if first_state is not None else {})
+        temporal_state_bytes += tensor_state_bytes(second_state.v if second_state is not None else {})
+        optimizer_state_bytes = tensor_state_bytes(optimizer.state if optimizer is not None else {})
+        total_algorithm_state_bytes = preconditioner_state_bytes + temporal_state_bytes + optimizer_state_bytes
         cost = dict(**tracker.finish(), total_refresh_time=sum(refresh_times),
                     mean_refresh_time=sum(refresh_times) / len(refresh_times) if refresh_times else 0.,
-                    number_of_refreshes=len(refresh_times), preconditioner_state_bytes=state_bytes(active))
+                    number_of_refreshes=len(refresh_times),
+                    preconditioner_state_bytes=preconditioner_state_bytes,
+                    temporal_state_bytes=temporal_state_bytes,
+                    optimizer_state_bytes=optimizer_state_bytes,
+                    total_algorithm_state_bytes=total_algorithm_state_bytes)
         summary = dict(**cost, final_accuracy=acc[-1], best_accuracy=max(acc),
                        late_mean_accuracy=sum(late) / len(late) if late else None,
                        final_test_loss=rows[-1]["test_loss"], epsilon_spent=accountant.get_epsilon(c["delta"]),

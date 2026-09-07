@@ -4,6 +4,17 @@ import copy
 import torch
 
 
+def state_bytes(value):
+    """Count only tensor storage in a nested optimizer/algorithm state."""
+    if isinstance(value, torch.Tensor):
+        return value.numel() * value.element_size()
+    if isinstance(value, dict):
+        return sum(state_bytes(item) for item in value.values())
+    if isinstance(value, (tuple, list)):
+        return sum(state_bytes(item) for item in value)
+    return 0
+
+
 def beta1_ema(previous, gradient, beta1):
     """One first-moment EMA update, elementwise over parameter tensors."""
     return [beta1 * old + (1. - beta1) * new for old, new in zip(previous, gradient)]
@@ -21,6 +32,20 @@ def beta2_update(previous, q, beta2, delta_t):
         raise ValueError("delta_t must be positive")
     a = beta2 ** delta_t
     return a * previous + (1. - a) * q
+
+
+def beta2_diagnostics(previous, q, current, eps):
+    """Layer-wise RMS log-distance for the beta2 innovation and EMA move."""
+    if previous is None:
+        return {name: {"beta2_D_innovation": None, "beta2_D_ema": None}
+                for name in q}
+    result = {}
+    for name in q:
+        old = previous[name].double()
+        innovation = (q[name].double().add(eps).log() - old.add(eps).log()).square().mean().sqrt()
+        ema = (current[name].double().add(eps).log() - old.add(eps).log()).square().mean().sqrt()
+        result[name] = {"beta2_D_innovation": float(innovation), "beta2_D_ema": float(ema)}
+    return result
 
 
 class FirstMomentState:
@@ -47,8 +72,11 @@ class SecondMomentState:
         self.beta2 = beta2
         self.v = None
         self.last_refresh_step = None
+        self.last_previous = None
 
     def update(self, q, step):
+        previous = None if self.v is None else {name: value.detach().clone() for name, value in self.v.items()}
+        self.last_previous = previous
         if self.v is None:
             self.v = {name: value.detach().clone() for name, value in q.items()}
             delta_t = None
@@ -83,4 +111,3 @@ def apply_gradients(params, gradients, lr):
     with torch.no_grad():
         for p, g in zip(params, gradients):
             p.add_(g, alpha=-lr)
-
