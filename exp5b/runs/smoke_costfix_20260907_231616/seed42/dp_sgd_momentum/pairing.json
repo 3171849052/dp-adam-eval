@@ -1,0 +1,75 @@
+{
+  "private": [
+    {
+      "step": 1,
+      "batch_indices": [
+        15,
+        8,
+        13,
+        0
+      ],
+      "batch_hash": "27ad0a1e0860f1a729c1b9abb5aa9e31169749cc7e5030c7949c6a491c945739",
+      "noise_hash": "87bcec29b4385eb2c3a1d9f4e7e128db4ab15d48e850d0ab37a3c32bf8098479",
+      "noise_rng_before": "cb0af0cbec78188e11f2a9b09e1172429646e6e41a1a6ec6f8c7cc4d1cc5fe3a",
+      "noise_rng_after": "65f1068386521d9a79d934198d5f5e293bae913028750436047e4b624d1e9f90",
+      "loader_rng_hash": "33e4d3a61edfe77a5a6e91ca9259f9d771d45e98277a53f9f6909830d13b1a78",
+      "model_hash": "0e54b734432222b4781d4f80429847e38474ec27c8148af536246689ea3abddf"
+    },
+    {
+      "step": 2,
+      "batch_indices": [
+        4,
+        6,
+        2,
+        1
+      ],
+      "batch_hash": "da1bc5954817ced9c3f296ec36b2dfa0ad296df2b81730b25ebc0f72be9e3d57",
+      "noise_hash": "ae3f050d2990fddaa2bc6d2ca0933580e56fb085dee621bde0d6f02b393e48bb",
+      "noise_rng_before": "65f1068386521d9a79d934198d5f5e293bae913028750436047e4b624d1e9f90",
+      "noise_rng_after": "1aa2acfa8f9c5a2d8e374b96e18b3c00b057fd47f65ca240654d1eef555aef74",
+      "loader_rng_hash": "33e4d3a61edfe77a5a6e91ca9259f9d771d45e98277a53f9f6909830d13b1a78",
+      "model_hash": "2c2fb72487f1eac29d53654ba596b1c8cf2f9a027ddc63ca60c415305835696e"
+    },
+    {
+      "step": 3,
+      "batch_indices": [
+        11,
+        10,
+        9,
+        3
+      ],
+      "batch_hash": "62e845a6a6cbf6bd6f2d248e2be559ac683efa846179c290a5b406b95295f9c0",
+      "noise_hash": "d5d47fe8853f0660e0b1b65c9d46a9459118954ab11e2d499ebfc8f52cba03c5",
+      "noise_rng_before": "1aa2acfa8f9c5a2d8e374b96e18b3c00b057fd47f65ca240654d1eef555aef74",
+      "noise_rng_after": "7cd5736528926904f0a5b989e8ecbb5e1e2e42751ce8a3a20d6e5781b7630b3c",
+      "loader_rng_hash": "33e4d3a61edfe77a5a6e91ca9259f9d771d45e98277a53f9f6909830d13b1a78",
+      "model_hash": "60334ff0a203ff5a84f8600efb3a0edb4ef66bf4ba96eb72f34df309e8aad30c"
+    },
+    {
+      "step": 4,
+      "batch_indices": [
+        7,
+        14,
+        12,
+        5
+      ],
+      "batch_hash": "5be6aa4733780745de879c1c1d817764953506deb674a1070091d49debd64df1",
+      "noise_hash": "bb034a55ac7da3fa3c2780952d6749a7bafebb374db3f9ce317ad3a28d67c392",
+      "noise_rng_before": "7cd5736528926904f0a5b989e8ecbb5e1e2e42751ce8a3a20d6e5781b7630b3c",
+      "noise_rng_after": "44fabfdb469a5958e0938de708daaec3cd02404f9a8fd51f33a8c96732782f72",
+      "loader_rng_hash": "33e4d3a61edfe77a5a6e91ca9259f9d771d45e98277a53f9f6909830d13b1a78",
+      "model_hash": "241b2f1ee88427cbda93784108206de6a7faa6d4ce0fb276e88d80bfb4c261ed"
+    }
+  ],
+  "synthetic": [],
+  "oracle_indices": [
+    11,
+    5,
+    8,
+    6,
+    1,
+    15,
+    2,
+    10
+  ]
+}

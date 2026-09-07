@@ -27,6 +27,18 @@ uses `torch.optim.SGD(momentum=.9)` or Adam. The clean Adam direction retained
 in the logs is a mechanistic diagnostic reference only, not an Exp5b competing
 optimizer.
 
+Cost accounting: official forward/backward, preconditioning, clipping/noising,
+state updates, and refresh core work are algorithm core. Mandatory audit hashes
+and RNG replay, optional research diagnostics, oracle materialization, and
+counterfactual/Adam scratch work are diagnostic work. `core_wall_time` is
+`wall_time - diagnostic_seconds`; `refresh_seconds` is only official refresh
+Core A plus Core B. `peak_cuda_memory_core` is measured from official core
+segments, while diagnostic allocations are excluded. Persistent state is
+reported independently as `preconditioner_state_bytes`,
+`first_moment_state_bytes`, `second_moment_state_bytes`, and
+`optimizer_state_bytes`; `temporal_state_bytes` is first plus second, and
+`total_algorithm_state_bytes` is their complete sum.
+
 Synthetic refresh uses pink-noise images and labels from
 `torch.randint(0, 10, ...)`. Refresh occurs before reading the current private
 batch. β2 uses `v_0=q_0` and `beta2 ** delta_t`, where `delta_t` is the actual

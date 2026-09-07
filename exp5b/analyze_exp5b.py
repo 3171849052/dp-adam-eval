@@ -91,7 +91,8 @@ def summarize(runs):
         "final_accuracy", "best_accuracy", "late_mean_accuracy", "final_test_loss",
         "mean_refresh_time", "total_refresh_time", "core_wall_time", "diagnostic_seconds",
         "wall_time", "peak_cuda_memory_core", "peak_cuda_memory_overall", "peak_cuda_memory_allocated",
-        "peak_cuda_memory_reserved", "preconditioner_state_bytes", "temporal_state_bytes",
+        "peak_cuda_memory_reserved", "preconditioner_state_bytes", "first_moment_state_bytes",
+        "second_moment_state_bytes", "temporal_state_bytes",
         "optimizer_state_bytes", "total_algorithm_state_bytes",
     )
     train_fields = (

@@ -1,6 +1,9 @@
+import gc
 import inspect
 import json
 import sys
+import weakref
+from contextlib import contextmanager
 
 import pytest
 import torch
@@ -91,6 +94,16 @@ def _tiny_data():
     return TensorDataset(torch.randn(4, 1, 28, 28), torch.arange(4) % 10)
 
 
+def _tensor_refs(value):
+    if isinstance(value, torch.Tensor):
+        return [weakref.ref(value)]
+    if isinstance(value, dict):
+        return sum((_tensor_refs(item) for item in value.values()), [])
+    if isinstance(value, (tuple, list)):
+        return sum((_tensor_refs(item) for item in value), [])
+    return []
+
+
 @pytest.mark.parametrize("method", ["syn_diag_beta12", "dp_sgd_momentum", "dp_kfc_momentum"])
 def test_diagnostics_on_off_preserves_training_pairing(tmp_path, method):
     from exp5b.train_exp5b import train
@@ -104,6 +117,149 @@ def test_diagnostics_on_off_preserves_training_pairing(tmp_path, method):
     assert on_audit["private"] == off_audit["private"]
     if method in {"syn_diag_beta12", "dp_kfc_momentum"}:
         assert on_audit["synthetic"] == off_audit["synthetic"]
+
+
+@pytest.mark.parametrize("method,refresh_name", [
+    ("syn_diag_beta12", "refresh_beta2_core_a"),
+    ("dp_kfc_momentum", "refresh_active"),
+])
+def test_old_preconditioner_is_dead_before_next_refresh_core(tmp_path, monkeypatch, method, refresh_name):
+    import exp5b.train_exp5b as train_module
+    config = _tiny_config(epochs=2, total_private_steps=2, oracle_enabled=False)
+    refs = []
+    original_hook = getattr(train_module, refresh_name)
+
+    def checked_refresh(*args, **kwargs):
+        if refs:
+            gc.collect()
+            assert all(ref() is None for ref in refs)
+        return original_hook(*args, **kwargs)
+
+    monkeypatch.setattr(train_module, refresh_name, checked_refresh)
+
+    def event_hook(kind, step, active):
+        if kind == "refresh_end" and step == 0:
+            refs.extend(_tensor_refs(active))
+
+    result = train_module.train(config, 42, method, tmp_path, (_tiny_data(), _tiny_data()),
+                                diagnostics=True, event_hook=event_hook)
+    assert result["completed_steps"] == 2
+    gc.collect()
+    assert all(ref() is None for ref in refs)
+
+
+def test_mandatory_hashes_are_inside_diagnostic_context(tmp_path, monkeypatch):
+    import exp5b.train_exp5b as train_module
+    config = _tiny_config(epochs=2, total_private_steps=2, oracle_enabled=False)
+    original_digest = train_module.digest
+    original_diagnostics = train_module.CostTracker.diagnostics
+    depth = 0
+    phase = False
+    observed = []
+
+    @contextmanager
+    def diagnostics(self):
+        nonlocal depth
+        depth += 1
+        try:
+            with original_diagnostics(self):
+                yield
+        finally:
+            depth -= 1
+
+    def digest(value):
+        if phase:
+            observed.append(depth)
+        return original_digest(value)
+
+    def hook(kind, step, active):
+        nonlocal phase
+        if kind == "refresh_start" and step >= 0:
+            phase = True
+
+    monkeypatch.setattr(train_module.CostTracker, "diagnostics", diagnostics)
+    monkeypatch.setattr(train_module, "digest", digest)
+    train_module.train(config, 42, "syn_diag_beta12", tmp_path, (_tiny_data(), _tiny_data()),
+                       diagnostics=False, event_hook=hook)
+    assert observed and all(value > 0 for value in observed)
+
+
+@pytest.mark.parametrize("method,core_name", [
+    ("syn_diag", "refresh_active"),
+    ("syn_diag_beta12", "refresh_beta2_core_a"),
+])
+def test_refresh_seconds_exclude_hashes_and_stale_diagnostics(tmp_path, monkeypatch, method, core_name):
+    import exp5b.train_exp5b as train_module
+    config = _tiny_config(oracle_enabled=False)
+
+    class FakeClock:
+        now = 0.
+
+        def __call__(self):
+            return self.now
+
+    clock = FakeClock()
+    original_samples = train_module.synthetic_samples
+    original_digest = train_module.digest
+    original_core = getattr(train_module, core_name)
+
+    def samples(*args, **kwargs):
+        result = original_samples(*args, **kwargs)
+        clock.now += 2.
+        return result
+
+    def digest(value):
+        clock.now += 100.
+        return original_digest(value)
+
+    def core(*args, **kwargs):
+        result = original_core(*args, **kwargs)
+        clock.now += 3.
+        return result
+
+    monkeypatch.setattr(train_module.time, "perf_counter", clock)
+    monkeypatch.setattr(train_module, "synthetic_samples", samples)
+    monkeypatch.setattr(train_module, "digest", digest)
+    monkeypatch.setattr(train_module, core_name, core)
+    result = train_module.train(config, 42, method, tmp_path, (_tiny_data(), _tiny_data()), diagnostics=True)
+    assert result["total_refresh_time"] == pytest.approx(5.)
+    assert result["diagnostic_seconds"] > 0
+    assert result["core_wall_time"] == pytest.approx(5.)
+
+
+def test_core_wall_time_excludes_diagnostic_clock(tmp_path, monkeypatch):
+    import exp5b.train_exp5b as train_module
+    config = _tiny_config(oracle_enabled=False)
+
+    class FakeClock:
+        now = 0.
+
+        def __call__(self):
+            return self.now
+
+    clock = FakeClock()
+    original_diagnostics = train_module.CostTracker.diagnostics
+    original_aggregate = train_module.aggregate_core
+
+    @contextmanager
+    def diagnostics(self):
+        with original_diagnostics(self):
+            clock.now += 50.
+            yield
+
+    def aggregate(*args, **kwargs):
+        result = original_aggregate(*args, **kwargs)
+        clock.now += 10.
+        return result
+
+    monkeypatch.setattr(train_module.time, "perf_counter", clock)
+    monkeypatch.setattr(train_module.CostTracker, "diagnostics", diagnostics)
+    monkeypatch.setattr(train_module, "aggregate_core", aggregate)
+    result = train_module.train(config, 42, "dp_sgd_momentum", tmp_path,
+                                (_tiny_data(), _tiny_data()), diagnostics=True)
+    assert result["diagnostic_seconds"] > 0
+    assert result["wall_time"] > result["core_wall_time"]
+    assert result["core_wall_time"] == pytest.approx(10.)
 
 
 @pytest.mark.parametrize("method,expected", [
@@ -143,6 +299,10 @@ def test_all_six_tiny_end_to_end_validation_analysis_and_state_bytes(tmp_path, m
             "syn_diag": p, "syn_diag_beta1": p + m, "syn_diag_beta2": p + v,
             "syn_diag_beta12": p + m + v, "dp_sgd_momentum": m, "dp_kfc_momentum": p + m,
         }[method]
+        assert summary["preconditioner_state_bytes"] == p
+        assert summary["first_moment_state_bytes"] == m
+        assert summary["second_moment_state_bytes"] == v
+        assert summary["temporal_state_bytes"] == m + v
         assert summary["total_algorithm_state_bytes"] == expected
         assert summary["completed_steps"] == 1
         assert summary["optimizer_state_bytes"] == 0
@@ -150,6 +310,13 @@ def test_all_six_tiny_end_to_end_validation_analysis_and_state_bytes(tmp_path, m
     monkeypatch.setattr(sys, "argv", ["validate_exp5b", "--config", str(tmp_path / "config.json"),
                                         "--runs", str(tmp_path / "runs"), "--output", str(tmp_path / "runs")])
     (tmp_path / "config.json").write_text(json.dumps(config))
+    validate_main()
+    assert json.loads((tmp_path / "runs" / "validation.json").read_text())["passed"]
+
+    # A CSV/JSON-only archive must validate from explicit state fields without
+    # inferring a first/second split from temporal_state_bytes.
+    for method in METHODS:
+        (tmp_path / "runs" / "seed42" / method / "final_state.pt").unlink()
     validate_main()
     assert json.loads((tmp_path / "runs" / "validation.json").read_text())["passed"]
 
@@ -173,3 +340,28 @@ def test_cuda_tiny_paths(tmp_path):
         assert torch.isfinite(torch.tensor(result["total_refresh_time"]))
         state = torch.load(tmp_path / "seed42" / method / "final_state.pt", map_location="cpu")
         assert all(torch.isfinite(value).all() for value in state["model"].values())
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+def test_cuda_refresh_releases_stale_before_core_peak(tmp_path, monkeypatch):
+    import exp5b.train_exp5b as train_module
+    config = _tiny_config(device="cuda", epochs=2, total_private_steps=2, oracle_enabled=False)
+    refs = []
+    original = train_module.refresh_beta2_core_a
+
+    def checked(*args, **kwargs):
+        if refs:
+            gc.collect()
+            assert all(ref() is None for ref in refs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(train_module, "refresh_beta2_core_a", checked)
+
+    def hook(kind, step, active):
+        if kind == "refresh_end" and step == 0:
+            refs.extend(_tensor_refs(active))
+
+    result = train_module.train(config, 42, "syn_diag_beta12", tmp_path,
+                                (_tiny_data(), _tiny_data()), diagnostics=True, event_hook=hook)
+    assert all(ref() is None for ref in refs)
+    assert result["peak_cuda_memory_core"] <= result["peak_cuda_memory_overall"]

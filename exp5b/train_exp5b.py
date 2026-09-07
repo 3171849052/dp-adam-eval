@@ -17,11 +17,12 @@ from exp3.cost import CostTracker
 from exp3.geometry import diagnose, oracle_compare, stale
 from exp3.metrics import after_noise, before_clip
 from exp3.preconditioners import apply, diagnostic_model, refresh
-from exp4.dynamics import AdamDirection, aggregate
+from dp_kfac.privacy import clip_and_noise_gradients
+from exp4.dynamics import AdamDirection
 from exp5b.common import (
     DEFAULT, LAYERS, METHODS, MOMENTUM_METHODS, ROOT, SYNTHETIC_METHODS,
     Indexed, SimpleCNN, RNGStream, datasets, digest, evaluate, fingerprint,
-    provenance, read_config, save_json, set_seed, write_csv,
+    provenance, read_config, rng_state_digest, save_json, set_seed, write_csv,
 )
 from exp5b.optimizers import (
     FirstMomentState, SecondMomentState, apply_gradients, beta2_diagnostics,
@@ -57,10 +58,10 @@ def synthetic_q(state, samples, c, dev):
     return {name: value / len(x) for name, value in sums.items()}
 
 
-def synthetic_samples(c, dev, rng, *, budget=None):
+def synthetic_samples(c, dev, rng, *, budget=None, audit=False):
     """Generate the paired pink-noise/uniform-label synthetic stream."""
     budget = c["M_syn"] if budget is None else budget
-    before = rng.audit()
+    before = rng.snapshot_state()
     with rng.use():
         batches = []
         for start in range(0, budget, c["batch_size"]):
@@ -70,12 +71,86 @@ def synthetic_samples(c, dev, rng, *, budget=None):
                 torch.randint(0, 10, (b,), device=dev),
             ))
     x, y = (torch.cat([batch[index] for batch in batches]) for index in (0, 1))
-    return (x, y), dict(rng_before=before, rng_after=rng.audit(), count=len(y))
+    after = rng.snapshot_state()
+    if audit:
+        return (x, y), dict(
+            rng_before=rng_state_digest(before), rng_after=rng_state_digest(after), count=len(y),
+            **synthetic_sample_audit((x, y)),
+        )
+    return (x, y), dict(_rng_before_state=before, _rng_after_state=after, count=len(y))
 
 
 def synthetic_sample_audit(samples):
     x, y = samples
     return dict(samples_hash=digest([x]), labels_hash=digest([y]))
+
+
+def _copy_tree(value, device=None):
+    if isinstance(value, torch.Tensor):
+        value = value.detach().clone()
+        return value.cpu() if device is None else value.to(device)
+    if isinstance(value, dict):
+        return {key: _copy_tree(item, device) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_copy_tree(item, device) for item in value)
+    if isinstance(value, list):
+        return [_copy_tree(item, device) for item in value]
+    return value
+
+
+def snapshot_active(active):
+    """Move a stale preconditioner to diagnostic-owned CPU storage."""
+    if active is None:
+        return None
+    kind, value = active
+    return kind, _copy_tree(value)
+
+
+def active_on_device(snapshot, dev):
+    if snapshot is None:
+        return None
+    kind, value = snapshot
+    return kind, _copy_tree(value, dev)
+
+
+def _same_rng_state(left, right):
+    if not torch.equal(left["cpu"], right["cpu"]):
+        return False
+    if left["cuda"] is None or right["cuda"] is None:
+        return left["cuda"] is None and right["cuda"] is None
+    return torch.equal(left["cuda"], right["cuda"])
+
+
+@torch.no_grad()
+def aggregate_core(model, active, rng, sigma, c, b):
+    """Official Exp5b DP aggregation; auditing is deliberately separate."""
+    apply(model, active)
+    params = list(model.parameters())
+    noise_shapes = [tuple(p.grad_sample.contiguous().view(b, -1).sum(0).shape) for p in params]
+    before = rng.snapshot_state()
+    with rng.use():
+        clip_and_noise_gradients(model, sigma, c["max_grad_norm"], b, store_summed_grad=True)
+    after = rng.snapshot_state()
+    return dict(
+        clean=[p.summed_grad.detach().clone() for p in params],
+        noisy=[p.grad.detach().clone() for p in params],
+        noise_shapes=noise_shapes, _rng_before_state=before, _rng_after_state=after,
+    )
+
+
+def aggregate_audit(result, rng, params):
+    """Replay/hash the exact Gaussian draw outside the official core."""
+    replay = RNGStream.from_snapshot(result["_rng_before_state"], rng.dev)
+    with replay.use():
+        noise = [torch.randn(shape, device=p.device, dtype=p.dtype)
+                 for shape, p in zip(result["noise_shapes"], params)]
+    if not _same_rng_state(replay.snapshot_state(), result["_rng_after_state"]):
+        raise AssertionError("Exp5b Gaussian draw layout changed")
+    return dict(
+        noise_hash=digest(noise),
+        noise_rng_before=rng_state_digest(result["_rng_before_state"]),
+        noise_rng_after=rng_state_digest(result["_rng_after_state"]),
+    )
 
 
 def make_diagonal_p(q, c):
@@ -114,7 +189,7 @@ def direction_norm(values):
     return float(torch.cat([v.detach().reshape(-1) for v in values]).double().norm())
 
 
-def direction_metrics(adam_direction, noisy_direction, clean_direction, clip_row):
+def direction_metrics(adam_direction, noisy_direction, clean_direction, method_clip_cosine):
     clean_cos = cosine(clean_direction, adam_direction)
     noisy_cos = cosine(noisy_direction, adam_direction)
     return {
@@ -123,7 +198,7 @@ def direction_metrics(adam_direction, noisy_direction, clean_direction, clip_row
         "noise_degradation_method": clean_cos - noisy_cos if clean_cos is not None and noisy_cos is not None else None,
         "method_direction_norm": direction_norm(noisy_direction),
         "method_direction_norm_current_noise_off": direction_norm(clean_direction),
-        "method_clip_cosine": cosine(clip_row["raw_direction"], clip_row["clean_direction"]),
+        "method_clip_cosine": method_clip_cosine,
     }
 
 
@@ -143,6 +218,24 @@ def counterfactual(model, x, y, directions, c):
         result[f"loss_progress_{name}"] = (base - loss) / (distance + c["eps_num"])
         result[f"candidate_loss_{name}"] = loss
     return result
+
+
+def move_adam_direction(shadow, dev):
+    """Keep the disposable Adam reference off the official core device."""
+    if shadow is None:
+        return
+    dev = torch.device(dev)
+    for parameter in shadow.params:
+        parameter.data = parameter.data.to(dev)
+        if parameter.grad is not None:
+            parameter.grad = parameter.grad.to(dev)
+    for state in shadow.optimizer.state.values():
+        for key, value in list(state.items()):
+            if isinstance(value, torch.Tensor):
+                state[key] = value.to(dev)
+    if dev.type == "cpu":
+        for parameter in shadow.params:
+            parameter.grad = None
 
 
 def _official_optimizer_metadata(method, beta1_on):
@@ -217,6 +310,7 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
     # AdamDirection is a disposable mechanistic reference only. It is never
     # used for an official update or included as an Exp5b baseline.
     shadow_adam = AdamDirection(model.parameters(), dict(c, adam_lr=c["learning_rate"])) if diagnostics else None
+    move_adam_direction(shadow_adam, "cpu")
     accountant = RDPAccountant()
     noise_rng = RNGStream(seed + 4, dev)
     syn_rng = RNGStream(seed + 3, dev) if is_syn else None
@@ -271,13 +365,21 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
             iterator = iter(loader)
             for _ in range(len(loader)):
                 is_refresh = is_syn and step % c["K"] == 0
-                old_active = active
+                old_diag_active = None
                 refresh_audit = None
                 if is_refresh:
                     event("refresh_start")
+                    # The old preconditioner is needed only by stale/oracle
+                    # diagnostics. Snapshot it to CPU, then drop every
+                    # official GPU reference before allocating the new P.
+                    if active is not None:
+                        if diagnostics:
+                            with tracker.diagnostics():
+                                old_diag_active = snapshot_active(active)
+                        active = None
                     tracker.sync()
                     core_a_started = time.perf_counter()
-                    samples, sample_audit_core = synthetic_samples(c, dev, syn_rng)
+                    samples, sample_audit_core = synthetic_samples(c, dev, syn_rng, audit=False)
                     if beta2_on:
                         q, v, previous, delta_t = refresh_beta2_core_a(
                             model._module.state_dict(), samples, c, dev, second_state, step,
@@ -293,7 +395,12 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                         # Hashes and D metrics are audit-only. They are kept in
                         # the diagnostic segment even when diagnostics=False.
                         with tracker.diagnostics():
-                            sample_audit = dict(sample_audit_core, **synthetic_sample_audit(samples))
+                            sample_audit = dict(
+                                count=sample_audit_core["count"],
+                                rng_before=rng_state_digest(sample_audit_core["_rng_before_state"]),
+                                rng_after=rng_state_digest(sample_audit_core["_rng_after_state"]),
+                                **synthetic_sample_audit(samples),
+                            )
                             q_hash = digest(q.values())
                             v_hash = digest(v.values())
                             beta2_metrics = beta2_diagnostics(previous, q, v, c["eps_num"])
@@ -320,7 +427,12 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                         refresh_audit = {"kind": "kfac" if method == "dp_kfc_momentum" else "q_current",
                                          "beta2_delta_t": None}
                         with tracker.diagnostics():
-                            sample_audit = dict(sample_audit_core, **synthetic_sample_audit(samples))
+                            sample_audit = dict(
+                                count=sample_audit_core["count"],
+                                rng_before=rng_state_digest(sample_audit_core["_rng_before_state"]),
+                                rng_after=rng_state_digest(sample_audit_core["_rng_after_state"]),
+                                **synthetic_sample_audit(samples),
+                            )
                         samples = None
                         del samples
                         refresh_elapsed = core_a_seconds
@@ -330,9 +442,10 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                     if diagnostics:
                         with tracker.diagnostics():
                             transforms = {"new": active}
-                            if old_active is not None:
-                                transforms["old"] = old_active
-                            probes, _ = synthetic_samples(c, dev, stale_rng, budget=c["M_stale"])
+                            old_for_diag = active_on_device(old_diag_active, dev)
+                            if old_for_diag is not None:
+                                transforms["old"] = old_for_diag
+                            probes, _ = synthetic_samples(c, dev, stale_rng, budget=c["M_stale"], audit=True)
                             geom = diagnose(model._module.state_dict(), probes, transforms, c, dev, root)
                             for layer in LAYERS:
                                 beta2_fields = {}
@@ -348,34 +461,40 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                                     **beta2_fields,
                                     **stale(geom.get("old", {}).get(layer), geom["new"][layer]),
                                 ))
-                            del probes, geom, transforms
+                            del probes, geom, transforms, old_for_diag
+                    if not (diagnostics and c["oracle_enabled"] and step % c["K"] == 0):
+                        old_diag_active = None
                     synthetic_audits.append(dict(step=step, **sample_audit, **refresh_audit))
                     refresh_times.append(refresh_elapsed)
                     event("refresh_end")
 
                 if diagnostics and c["oracle_enabled"] and step % c["K"] == 0:
-                    values = [data[int(i)] for i in oracle_ids]
-                    oracle_samples = (
-                        torch.stack([v[0] for v in values]),
-                        torch.tensor([v[1] for v in values]),
-                    )
-                    transforms = {"raw": None}
-                    if active is not None:
-                        transforms["new"] = active
-                        if old_active is not None:
-                            transforms["old"] = old_active
                     with tracker.diagnostics():
+                        # Keep indexing, stacking, tensor construction, and
+                        # transform materialization in the diagnostic block.
+                        values = [data[int(i)] for i in oracle_ids]
+                        oracle_samples = (
+                            torch.stack([v[0] for v in values]),
+                            torch.tensor([v[1] for v in values]),
+                        )
+                        transforms = {"raw": None}
+                        if active is not None:
+                            transforms["new"] = active
+                        old_for_diag = active_on_device(old_diag_active, dev)
+                        if old_for_diag is not None:
+                            transforms["old"] = old_for_diag
                         geom = diagnose(model._module.state_dict(), oracle_samples, transforms, c, dev, root)
-                    raw_geom = geom["raw"]
-                    new_geom = geom.get("new", raw_geom)
-                    old_geom = geom.get("old")
-                    for layer in LAYERS:
-                        oracle_rows.append(dict(
-                            step=step, layer=layer,
-                            **oracle_compare(raw_geom[layer], new_geom[layer],
-                                             None if old_geom is None else old_geom[layer]),
-                        ))
-                    del values, oracle_samples, transforms, geom
+                        raw_geom = geom["raw"]
+                        new_geom = geom.get("new", raw_geom)
+                        old_geom = geom.get("old")
+                        for layer in LAYERS:
+                            oracle_rows.append(dict(
+                                step=step, layer=layer,
+                                **oracle_compare(raw_geom[layer], new_geom[layer],
+                                                 None if old_geom is None else old_geom[layer]),
+                            ))
+                        del values, oracle_samples, transforms, geom, old_for_diag
+                    old_diag_active = None
 
                 event("before_private_batch")
                 x, y, indices = next(iterator)
@@ -383,43 +502,66 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                 model.zero_grad(set_to_none=True)
                 loss = F.cross_entropy(model(x), y, reduction="sum")
                 loss.backward()
-                raw = [p.grad.detach().clone() / len(x) for p in model.parameters()]
                 if active is not None:
                     apply(model, active)
-                clip_row = before_clip(model, c, len(x))
-                clip_row["raw_direction"] = [p.grad_sample.mean(0).detach().clone() for p in model.parameters()]
-                with_noise = aggregate(model, None, noise_rng, sigma, c, len(x))
-                clip_row["clean_direction"] = with_noise["clean"]
-                row = dict(clip_row)
-                row.pop("raw_direction")
-                row.pop("clean_direction")
-                row.update(after_noise(model, sigma, c, len(x)))
-                row["diagnostic_snr"] = row["clipped_aggregate_norm"] / (row["expected_noise_norm"] + c["eps_num"])
+                # These copies and clipping metrics are diagnostic-owned; the
+                # actual preconditioning above and DP aggregation below remain
+                # official algorithm work.
+                with tracker.diagnostics():
+                    raw = [p.grad.detach().cpu().clone() / len(x) for p in model.parameters()]
+                    clip_row = before_clip(model, c, len(x))
+                    raw_direction = [p.grad_sample.mean(0).detach().cpu().clone()
+                                     for p in model.parameters()]
+                with_noise = aggregate_core(model, None, noise_rng, sigma, c, len(x))
+                with tracker.diagnostics():
+                    audit = aggregate_audit(with_noise, noise_rng, list(model.parameters()))
+                    with_noise.update(audit)
+                    clean_direction_cpu = [value.detach().cpu().clone() for value in with_noise["clean"]]
+                    row = dict(clip_row)
+                    row.update(after_noise(model, sigma, c, len(x)))
+                    row["diagnostic_snr"] = row["clipped_aggregate_norm"] / (
+                        row["expected_noise_norm"] + c["eps_num"]
+                    )
+                    row["method_clip_cosine"] = cosine(raw_direction, clean_direction_cpu)
+                    # Keep the noise-off direction only as CPU diagnostic
+                    # data; it must not occupy core-device memory.
+                    with_noise["clean"] = clean_direction_cpu
+                del with_noise["_rng_before_state"], with_noise["_rng_after_state"]
+                del with_noise["noise_shapes"]
                 if diagnostics:
                     with tracker.diagnostics():
-                        adam_direction = shadow_adam.advance(raw)
-                        if first_state is not None:
-                            noisy_direction = first_state.peek(with_noise["noisy"])
-                            clean_direction = first_state.peek(with_noise["clean"])
-                        else:
-                            noisy_direction = with_noise["noisy"]
-                            clean_direction = with_noise["clean"]
-                        row.update(direction_metrics(
-                            adam_direction, noisy_direction, clean_direction,
-                            {"raw_direction": clip_row["raw_direction"],
-                             "clean_direction": clip_row["clean_direction"]},
-                        ))
-                        row.update({f"loss_progress_{name}": None for name in ("adam", "method", "current_noise_off")})
-                        row.update({f"candidate_loss_{name}": None for name in ("adam", "method", "current_noise_off")})
-                        diag_step = step == 0 or (step + 1) % c["diagnostic_interval"] == 0 or step + 1 == total
-                        if diag_step:
-                            row.update(counterfactual(
-                                model, x, y,
-                                {"adam": adam_direction, "method": noisy_direction,
-                                 "current_noise_off": clean_direction}, c,
+                        move_adam_direction(shadow_adam, dev)
+                        try:
+                            adam_direction = shadow_adam.advance([g.to(dev) for g in raw])
+                            clean_gradient = [g.to(dev) for g in with_noise["clean"]]
+                            if first_state is not None:
+                                noisy_direction = first_state.peek(with_noise["noisy"])
+                                clean_direction = first_state.peek(clean_gradient)
+                            else:
+                                noisy_direction = with_noise["noisy"]
+                                clean_direction = clean_gradient
+                            row.update(direction_metrics(
+                                adam_direction, noisy_direction, clean_direction,
+                                row["method_clip_cosine"],
                             ))
+                            row.update({f"loss_progress_{name}": None for name in ("adam", "method", "current_noise_off")})
+                            row.update({f"candidate_loss_{name}": None for name in ("adam", "method", "current_noise_off")})
+                            diag_step = step == 0 or (step + 1) % c["diagnostic_interval"] == 0 or step + 1 == total
+                            if diag_step:
+                                row.update(counterfactual(
+                                    model, x, y,
+                                    {"adam": adam_direction, "method": noisy_direction,
+                                     "current_noise_off": clean_direction}, c,
+                                ))
+                            del clean_gradient
+                        finally:
+                            move_adam_direction(shadow_adam, "cpu")
+                    del raw, raw_direction
+                else:
+                    del raw, raw_direction
 
-                before = [p.detach().clone() for p in model.parameters()]
+                with tracker.diagnostics():
+                    before = [p.detach().cpu().clone() for p in model.parameters()]
                 if first_state is not None:
                     # The shared helper consumes only the privatized noisy
                     # aggregate, then returns the bias-corrected direction.
@@ -427,25 +569,33 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                 else:
                     actual_direction = with_noise["noisy"]
                 apply_gradients(model.parameters(), actual_direction, c["learning_rate"])
-                update = direction_norm([p.detach() - old for p, old in zip(model.parameters(), before)])
-                row.update(update_norm=update, method_update_norm=update)
+                with tracker.diagnostics():
+                    update = direction_norm([p.detach().cpu() - old for p, old in zip(model.parameters(), before)])
+                    row.update(update_norm=update, method_update_norm=update)
+                del before, with_noise["clean"]
                 accountant.step(noise_multiplier=sigma, sample_rate=sample_rate)
                 step += 1
-                row.update(
-                    seed=seed, method=method, step=step, epoch=epoch + 1,
-                    train_loss=float(loss.detach()) / len(x), test_loss=None, test_accuracy=None,
-                    syn_refresh=is_refresh, batch_hash=digest(indices), noise_hash=with_noise["noise_hash"],
-                )
+                with tracker.diagnostics():
+                    batch_indices = indices.tolist()
+                    batch_hash = digest(indices)
+                    loader_rng_hash = digest([loader_rng.get_state()])
+                    model_hash = digest(model.parameters())
+                    row.update(
+                        seed=seed, method=method, step=step, epoch=epoch + 1,
+                        train_loss=float(loss.detach()) / len(x), test_loss=None, test_accuracy=None,
+                        syn_refresh=is_refresh, batch_hash=batch_hash, noise_hash=with_noise["noise_hash"],
+                    )
+                    if step % c["eval_interval"] == 0 or step == total:
+                        row.update(evaluate(model, test_loader, dev))
+                    audits.append(dict(
+                        step=step, batch_indices=batch_indices, batch_hash=batch_hash,
+                        noise_hash=with_noise["noise_hash"], noise_rng_before=with_noise["noise_rng_before"],
+                        noise_rng_after=with_noise["noise_rng_after"], loader_rng_hash=loader_rng_hash,
+                        model_hash=model_hash,
+                    ))
                 if step % c["eval_interval"] == 0 or step == total:
-                    row.update(evaluate(model, test_loader, dev))
                     print(f"seed={seed} {method} step={step}/{total} accuracy={row['test_accuracy']:.4f}", flush=True)
                 rows.append(row)
-                audits.append(dict(
-                    step=step, batch_indices=indices.tolist(), batch_hash=digest(indices),
-                    noise_hash=with_noise["noise_hash"], noise_rng_before=with_noise["noise_rng_before"],
-                    noise_rng_after=with_noise["noise_rng_after"], loader_rng_hash=digest([loader_rng.get_state()]),
-                    model_hash=digest(model.parameters()),
-                ))
                 if not all(torch.isfinite(p).all() for p in model.parameters()):
                     raise FloatingPointError("Nonfinite model parameters")
 
@@ -453,15 +603,23 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
         acc = [r["test_accuracy"] for r in rows if r["test_accuracy"] is not None]
         late = [r["test_accuracy"] for r in rows if r["step"] > total / 2 and r["test_accuracy"] is not None]
         preconditioner_state_bytes = tensor_state_bytes(active)
-        temporal_state_bytes = tensor_state_bytes(first_state.m if first_state is not None else {})
-        temporal_state_bytes += tensor_state_bytes(second_state.v if second_state is not None else {})
+        first_moment_state_bytes = tensor_state_bytes(first_state.m if first_state is not None else {})
+        second_moment_state_bytes = tensor_state_bytes(second_state.v if second_state is not None else {})
+        temporal_state_bytes = first_moment_state_bytes + second_moment_state_bytes
         optimizer_state_bytes = 0
-        total_algorithm_state_bytes = preconditioner_state_bytes + temporal_state_bytes
+        total_algorithm_state_bytes = (
+            preconditioner_state_bytes + first_moment_state_bytes + second_moment_state_bytes
+            + optimizer_state_bytes
+        )
+        with tracker.diagnostics():
+            final_model_hash = digest(model.parameters())
         cost = dict(
             **tracker.finish(), total_refresh_time=sum(refresh_times),
             mean_refresh_time=sum(refresh_times) / len(refresh_times) if refresh_times else 0.,
             number_of_refreshes=len(refresh_times),
             preconditioner_state_bytes=preconditioner_state_bytes,
+            first_moment_state_bytes=first_moment_state_bytes,
+            second_moment_state_bytes=second_moment_state_bytes,
             temporal_state_bytes=temporal_state_bytes,
             optimizer_state_bytes=optimizer_state_bytes,
             total_algorithm_state_bytes=total_algorithm_state_bytes,
@@ -471,7 +629,7 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
             late_mean_accuracy=sum(late) / len(late) if late else None,
             final_test_loss=rows[-1]["test_loss"], epsilon_spent=accountant.get_epsilon(c["delta"]),
             noise_multiplier=sigma, completed_steps=step,
-            final_model_hash=digest(model.parameters()), fingerprint=fingerprint(c), seed=seed, method=method,
+            final_model_hash=final_model_hash, fingerprint=fingerprint(c), seed=seed, method=method,
         )
         meta.update(summary, complete=True)
         save_json(root / "metadata.json", meta)

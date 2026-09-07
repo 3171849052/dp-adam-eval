@@ -86,18 +86,16 @@ def validate(c, runs, output):
                 raise ValueError(f"Unexpected second-moment state: {path}")
             if summary["preconditioner_state_bytes"] != expected_p_bytes:
                 raise ValueError(f"Preconditioner state byte mismatch: {path}")
-            if summary["temporal_state_bytes"] != expected_m_bytes + expected_v_bytes:
-                raise ValueError(f"Temporal state byte mismatch: {path}")
+            if summary["first_moment_state_bytes"] != expected_m_bytes:
+                raise ValueError(f"First-moment state byte mismatch: {path}")
+            if summary["second_moment_state_bytes"] != expected_v_bytes:
+                raise ValueError(f"Second-moment state byte mismatch: {path}")
         else:
             expected_p_bytes = summary["preconditioner_state_bytes"]
-            expected_m_bytes = summary["temporal_state_bytes"] if meta["method"] in MOMENTUM_METHODS else 0
-            expected_v_bytes = summary["temporal_state_bytes"] - expected_m_bytes
-            if meta["method"] in MOMENTUM_METHODS and expected_m_bytes <= 0:
-                raise ValueError(f"Missing persistent FirstMomentState byte accounting: {path}")
-            if meta["method"] not in MOMENTUM_METHODS and expected_m_bytes != 0:
-                raise ValueError(f"Unexpected first-moment byte accounting: {path}")
-            if meta["method"] not in ("syn_diag_beta2", "syn_diag_beta12") and expected_v_bytes != 0:
-                raise ValueError(f"Unexpected second-moment byte accounting: {path}")
+            # CSV-only archives must use the explicit persisted-state fields;
+            # temporal_state_bytes is a derived sum, never a split heuristic.
+            expected_m_bytes = summary["first_moment_state_bytes"]
+            expected_v_bytes = summary["second_moment_state_bytes"]
         if summary["optimizer_state_bytes"] != 0:
             raise ValueError(f"Optimizer state bytes are nonzero: {path}")
         if summary["total_algorithm_state_bytes"] != expected_p_bytes + expected_m_bytes + expected_v_bytes:
@@ -106,12 +104,26 @@ def validate(c, runs, output):
         if (requires_p and expected_p_bytes <= 0) or (not requires_p and expected_p_bytes != 0):
             raise ValueError(f"Preconditioner state presence mismatch: {path}")
 
-        required_state = ("preconditioner_state_bytes", "temporal_state_bytes",
+        required_state = ("preconditioner_state_bytes", "first_moment_state_bytes",
+                          "second_moment_state_bytes", "temporal_state_bytes",
                           "optimizer_state_bytes", "total_algorithm_state_bytes")
         if any(key not in summary or summary[key] < 0 for key in required_state):
             raise ValueError(f"Invalid state byte fields: {path}")
-        if summary["total_algorithm_state_bytes"] != sum(summary[key] for key in required_state[:3]):
+        if summary["temporal_state_bytes"] != (summary["first_moment_state_bytes"]
+                                                 + summary["second_moment_state_bytes"]):
+            raise ValueError(f"Temporal state byte split mismatch: {path}")
+        if summary["total_algorithm_state_bytes"] != (
+                summary["preconditioner_state_bytes"] + summary["first_moment_state_bytes"]
+                + summary["second_moment_state_bytes"] + summary["optimizer_state_bytes"]):
             raise ValueError(f"State byte sum mismatch: {path}")
+        if meta["method"] in MOMENTUM_METHODS and expected_m_bytes <= 0:
+            raise ValueError(f"Missing persistent FirstMomentState byte accounting: {path}")
+        if meta["method"] not in MOMENTUM_METHODS and expected_m_bytes != 0:
+            raise ValueError(f"Unexpected first-moment byte accounting: {path}")
+        if meta["method"] in ("syn_diag_beta2", "syn_diag_beta12") and expected_v_bytes <= 0:
+            raise ValueError(f"Missing persistent SecondMomentState byte accounting: {path}")
+        if meta["method"] not in ("syn_diag_beta2", "syn_diag_beta12") and expected_v_bytes != 0:
+            raise ValueError(f"Unexpected second-moment byte accounting: {path}")
         for key in ("wall_time", "core_wall_time", "diagnostic_seconds", "total_refresh_time", "mean_refresh_time",
                     "peak_cuda_memory_core", "peak_cuda_memory_overall", "peak_cuda_memory_allocated",
                     "peak_cuda_memory_reserved"):

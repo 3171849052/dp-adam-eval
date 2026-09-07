@@ -134,6 +134,22 @@ class RNGStream:
     def audit(self):
         return digest([self.cpu] + ([] if self.cuda is None else [self.cuda]))
 
+    def snapshot_state(self):
+        """Clone raw stream state without hashing or serializing it."""
+        return {
+            "cpu": self.cpu.detach().clone(),
+            "cuda": None if self.cuda is None else self.cuda.detach().clone(),
+        }
+
+    @classmethod
+    def from_snapshot(cls, snapshot, dev):
+        """Make an isolated replay stream from a raw state snapshot."""
+        stream = cls.__new__(cls)
+        stream.dev = torch.device(dev)
+        stream.cpu = snapshot["cpu"].detach().clone()
+        stream.cuda = None if snapshot["cuda"] is None else snapshot["cuda"].detach().clone()
+        return stream
+
     @contextmanager
     def use(self):
         devices = [self.dev.index or 0] if self.cuda is not None else []
@@ -147,6 +163,11 @@ class RNGStream:
                 self.cpu = torch.get_rng_state()
                 if self.cuda is not None:
                     self.cuda = torch.cuda.get_rng_state(self.dev)
+
+
+def rng_state_digest(snapshot):
+    """Hash a raw RNG snapshot; callers place this in a diagnostic segment."""
+    return digest([snapshot["cpu"]] + ([] if snapshot["cuda"] is None else [snapshot["cuda"]]))
 
 
 class Indexed(torch.utils.data.Dataset):
