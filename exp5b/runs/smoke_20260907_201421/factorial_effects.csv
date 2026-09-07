@@ -1,0 +1,7 @@
+metric,seed,beta1_effect,beta2_effect,interaction,beta1_effect_mean,beta1_effect_std,beta1_effect_n,beta2_effect_mean,beta2_effect_std,beta2_effect_n,interaction_mean,interaction_std,interaction_n
+final_accuracy,42,0.0625,0.0,-0.0625,,,,,,,,,
+final_accuracy,all,,,,0.0625,,1.0,0.0,,1.0,-0.0625,,1.0
+final_test_loss,42,-2.9347822666168213,-0.09552335739135742,0.13054180145263672,,,,,,,,,
+final_test_loss,all,,,,-2.9347822666168213,,1.0,-0.09552335739135742,,1.0,0.13054180145263672,,1.0
+late_mean_accuracy,42,0.0625,0.0,-0.0625,,,,,,,,,
+late_mean_accuracy,all,,,,0.0625,,1.0,0.0,,1.0,-0.0625,,1.0
