@@ -104,6 +104,104 @@ def _tensor_refs(value):
     return []
 
 
+class _TinyGradSampleModel(torch.nn.Module):
+    def __init__(self, device="cpu"):
+        super().__init__()
+        self.first = torch.nn.Parameter(torch.zeros(2, 3, device=device))
+        self.second = torch.nn.Parameter(torch.zeros(4, device=device))
+
+
+def _attach_grad_samples(model, values):
+    for parameter, value in zip(model.parameters(), values):
+        parameter.grad_sample = value.to(parameter.device).clone()
+
+
+def _tiny_grad_samples(batch_size=4):
+    return [
+        torch.arange(batch_size * 6, dtype=torch.float32).reshape(batch_size, 2, 3) / 7,
+        torch.arange(batch_size * 4, dtype=torch.float32).reshape(batch_size, 4) / 5,
+    ]
+
+
+def test_noise_shape_metadata_uses_parameter_numel_only():
+    from exp5b.train_exp5b import noise_shapes_from_params
+
+    parameters = [torch.nn.Parameter(torch.zeros(2, 3)), torch.nn.Parameter(torch.zeros(4))]
+    for parameter in parameters:
+        parameter.grad_sample = object()
+    assert noise_shapes_from_params(parameters) == [(6,), (4,)]
+    source = inspect.getsource(noise_shapes_from_params)
+    assert "grad_sample" not in source
+    assert ".sum(" not in source
+
+
+def test_official_noisy_gradient_and_rng_match_upstream_exactly():
+    from dp_kfac.privacy import clip_and_noise_gradients
+    from exp5b.common import RNGStream, digest
+    from exp5b.train_exp5b import _same_rng_state, aggregate_audit, aggregate_core
+
+    values = _tiny_grad_samples()
+    model_old = _TinyGradSampleModel()
+    model_new = _TinyGradSampleModel()
+    _attach_grad_samples(model_old, values)
+    _attach_grad_samples(model_new, values)
+    config = {"max_grad_norm": .8, "learning_rate": .1}
+
+    old_rng = RNGStream(1234, "cpu")
+    old_before = old_rng.snapshot_state()
+    with old_rng.use():
+        clip_and_noise_gradients(model_old, .37, config["max_grad_norm"], 4, store_summed_grad=True)
+    old_after = old_rng.snapshot_state()
+
+    new_rng = RNGStream(1234, "cpu")
+    result = aggregate_core(model_new, None, new_rng, .37, config, 4)
+
+    assert result["noise_shapes"] == [(6,), (4,)]
+    assert _same_rng_state(old_before, result["_rng_before_state"])
+    assert _same_rng_state(old_after, result["_rng_after_state"])
+    for index, (old, new) in enumerate(zip(model_old.parameters(), model_new.parameters())):
+        assert torch.equal(old.grad, new.grad)
+        assert torch.equal(old.grad, result["noisy"][index])
+        assert not hasattr(new, "summed_grad")
+
+    replay = RNGStream.from_snapshot(old_before, "cpu")
+    with replay.use():
+        old_noise = [torch.randn(parameter.numel(), dtype=parameter.dtype)
+                     for parameter in model_old.parameters()]
+    assert _same_rng_state(replay.snapshot_state(), old_after)
+    new_audit = aggregate_audit(result, new_rng, list(model_new.parameters()))
+    assert new_audit["noise_hash"] == digest(old_noise)
+    assert new_audit["noise_rng_before"] == digest([old_before["cpu"]])
+    assert new_audit["noise_rng_after"] == digest([old_after["cpu"]])
+
+
+def test_diagnostic_clean_aggregate_matches_upstream_summed_grad():
+    from dp_kfac.privacy import clip_and_noise_gradients
+    from exp5b.train_exp5b import diagnostic_clean_clipped_aggregate
+
+    values = _tiny_grad_samples()
+    model_old = _TinyGradSampleModel()
+    model_new = _TinyGradSampleModel()
+    _attach_grad_samples(model_old, values)
+    _attach_grad_samples(model_new, values)
+    config = {"max_grad_norm": .8}
+
+    clip_and_noise_gradients(model_old, 0., config["max_grad_norm"], 4, store_summed_grad=True)
+    expected = [parameter.summed_grad.detach().clone() for parameter in model_old.parameters()]
+    actual = diagnostic_clean_clipped_aggregate(model_new, config, 4)
+    for left, right in zip(expected, actual):
+        torch.testing.assert_close(left, right, rtol=0, atol=0)
+
+
+def test_aggregate_core_source_keeps_summed_grad_diagnostic_only():
+    from exp5b.train_exp5b import aggregate_core
+
+    source = inspect.getsource(aggregate_core)
+    assert "store_summed_grad=False" in source
+    assert "store_summed_grad=True" not in source
+    assert '"clean"' not in source
+
+
 @pytest.mark.parametrize("method", ["syn_diag_beta12", "dp_sgd_momentum", "dp_kfc_momentum"])
 def test_diagnostics_on_off_preserves_training_pairing(tmp_path, method):
     from exp5b.train_exp5b import train
@@ -340,6 +438,29 @@ def test_cuda_tiny_paths(tmp_path):
         assert torch.isfinite(torch.tensor(result["total_refresh_time"]))
         state = torch.load(tmp_path / "seed42" / method / "final_state.pt", map_location="cpu")
         assert all(torch.isfinite(value).all() for value in state["model"].values())
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+@pytest.mark.parametrize("method", ["syn_diag_beta12", "dp_kfc_momentum"])
+def test_cuda_clean_diagnostic_released_before_official_core(method):
+    from exp5b.common import RNGStream
+    from exp5b.train_exp5b import aggregate_core, diagnostic_clean_clipped_aggregate
+
+    model = _TinyGradSampleModel("cuda")
+    _attach_grad_samples(model, _tiny_grad_samples())
+    config = {"max_grad_norm": .8, "learning_rate": .1}
+    clean = diagnostic_clean_clipped_aggregate(model, config, 4)
+    refs = [weakref.ref(value) for value in clean]
+    clean_cpu = [value.cpu().clone() for value in clean]
+    del clean
+    gc.collect()
+    torch.cuda.synchronize()
+    assert all(ref() is None for ref in refs)
+
+    result = aggregate_core(model, None, RNGStream(1234, "cuda"), .37, config, 4)
+    assert all(not hasattr(parameter, "summed_grad") for parameter in model.parameters())
+    assert all(value.is_cuda for value in result["noisy"])
+    assert all(value.device.type == "cpu" for value in clean_cpu)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")

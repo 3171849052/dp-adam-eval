@@ -1,6 +1,7 @@
 """Train the six paired Exp5b methods; full runs require explicit invocation."""
 import argparse
 import copy
+import math
 import time
 from pathlib import Path
 
@@ -15,9 +16,14 @@ from exp3.audit_upstream import require_pinned
 from exp3.common import generate_pink_noise
 from exp3.cost import CostTracker
 from exp3.geometry import diagnose, oracle_compare, stale
-from exp3.metrics import after_noise, before_clip
+from exp3.metrics import before_clip
 from exp3.preconditioners import apply, diagnostic_model, refresh
-from dp_kfac.privacy import clip_and_noise_gradients
+from dp_kfac.privacy import (
+    _compute_clip_factors,
+    _compute_per_sample_norms_squared,
+    _get_grad_sample,
+    clip_and_noise_gradients,
+)
 from exp4.dynamics import AdamDirection
 from exp5b.common import (
     DEFAULT, LAYERS, METHODS, MOMENTUM_METHODS, ROOT, SYNTHETIC_METHODS,
@@ -126,16 +132,50 @@ def aggregate_core(model, active, rng, sigma, c, b):
     """Official Exp5b DP aggregation; auditing is deliberately separate."""
     apply(model, active)
     params = list(model.parameters())
-    noise_shapes = [tuple(p.grad_sample.contiguous().view(b, -1).sum(0).shape) for p in params]
+    noise_shapes = noise_shapes_from_params(params)
     before = rng.snapshot_state()
     with rng.use():
-        clip_and_noise_gradients(model, sigma, c["max_grad_norm"], b, store_summed_grad=True)
+        clip_and_noise_gradients(model, sigma, c["max_grad_norm"], b, store_summed_grad=False)
     after = rng.snapshot_state()
     return dict(
-        clean=[p.summed_grad.detach().clone() for p in params],
-        noisy=[p.grad.detach().clone() for p in params],
+        noisy=[p.grad for p in params],
         noise_shapes=noise_shapes, _rng_before_state=before, _rng_after_state=after,
     )
+
+
+def noise_shapes_from_params(params):
+    """Return the upstream Gaussian draw shapes from parameter metadata only."""
+    return [(p.numel(),) for p in params]
+
+
+@torch.no_grad()
+def diagnostic_clean_clipped_aggregate(model, c, batch_size):
+    """Reconstruct upstream's clean clipped mean for diagnostics only."""
+    params = list(model.parameters())
+    total_norm_sq = _compute_per_sample_norms_squared(params, batch_size, params[0].device)
+    clip_factors = _compute_clip_factors(total_norm_sq, c["max_grad_norm"])
+    clean = []
+    for p in params:
+        grad_sample = _get_grad_sample(p).contiguous().view(batch_size, -1)
+        summed = (grad_sample * clip_factors.unsqueeze(1)).sum(dim=0)
+        clean.append((summed / batch_size).view_as(p))
+    return clean
+
+
+def diagnostic_after_noise(noisy, clean, sigma, c, batch_size):
+    """Compute noise/update diagnostics without parameter diagnostic state."""
+    noise_sq = sum(float((actual.double() - expected.double()).square().sum())
+                   for actual, expected in zip(noisy, clean))
+    grad_sq = sum(float(actual.double().square().sum()) for actual in noisy)
+    expected = sigma * c["max_grad_norm"] / batch_size * math.sqrt(
+        sum(value.numel() for value in noisy)
+    )
+    return {
+        "actual_noise_norm": math.sqrt(noise_sq),
+        "expected_noise_norm": expected,
+        "noisy_update_norm": math.sqrt(grad_sq),
+        "update_norm": c["learning_rate"] * math.sqrt(grad_sq),
+    }
 
 
 def aggregate_audit(result, rng, params):
@@ -346,6 +386,9 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
         ),
         oracle_indices=oracle_ids.tolist(),
         current_noise_off="historical first-moment state retained; only current Gaussian draw removed",
+        dp_store_summed_grad=False,
+        clean_aggregate_role="diagnostic_only",
+        noise_replay_shape_source="parameter_numel",
         complete=False,
     )
     save_json(root / "metadata.json", meta)
@@ -510,22 +553,23 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                 with tracker.diagnostics():
                     raw = [p.grad.detach().cpu().clone() / len(x) for p in model.parameters()]
                     clip_row = before_clip(model, c, len(x))
+                    clean_direction = diagnostic_clean_clipped_aggregate(model, c, len(x))
+                    clean_direction_cpu = [value.detach().cpu().clone() for value in clean_direction]
                     raw_direction = [p.grad_sample.mean(0).detach().cpu().clone()
                                      for p in model.parameters()]
+                    del clean_direction
                 with_noise = aggregate_core(model, None, noise_rng, sigma, c, len(x))
                 with tracker.diagnostics():
                     audit = aggregate_audit(with_noise, noise_rng, list(model.parameters()))
                     with_noise.update(audit)
-                    clean_direction_cpu = [value.detach().cpu().clone() for value in with_noise["clean"]]
+                    noisy_cpu = [value.detach().cpu().clone() for value in with_noise["noisy"]]
                     row = dict(clip_row)
-                    row.update(after_noise(model, sigma, c, len(x)))
+                    row.update(diagnostic_after_noise(noisy_cpu, clean_direction_cpu, sigma, c, len(x)))
                     row["diagnostic_snr"] = row["clipped_aggregate_norm"] / (
                         row["expected_noise_norm"] + c["eps_num"]
                     )
                     row["method_clip_cosine"] = cosine(raw_direction, clean_direction_cpu)
-                    # Keep the noise-off direction only as CPU diagnostic
-                    # data; it must not occupy core-device memory.
-                    with_noise["clean"] = clean_direction_cpu
+                    del noisy_cpu
                 del with_noise["_rng_before_state"], with_noise["_rng_after_state"]
                 del with_noise["noise_shapes"]
                 if diagnostics:
@@ -533,7 +577,7 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                         move_adam_direction(shadow_adam, dev)
                         try:
                             adam_direction = shadow_adam.advance([g.to(dev) for g in raw])
-                            clean_gradient = [g.to(dev) for g in with_noise["clean"]]
+                            clean_gradient = [g.to(dev) for g in clean_direction_cpu]
                             if first_state is not None:
                                 noisy_direction = first_state.peek(with_noise["noisy"])
                                 clean_direction = first_state.peek(clean_gradient)
@@ -556,6 +600,7 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                             del clean_gradient
                         finally:
                             move_adam_direction(shadow_adam, "cpu")
+                        del adam_direction, noisy_direction, clean_direction
                     del raw, raw_direction
                 else:
                     del raw, raw_direction
@@ -572,7 +617,7 @@ def train(c, seed, method, output, data_override=None, diagnostics=True, event_h
                 with tracker.diagnostics():
                     update = direction_norm([p.detach().cpu() - old for p, old in zip(model.parameters(), before)])
                     row.update(update_norm=update, method_update_norm=update)
-                del before, with_noise["clean"]
+                del before, clean_direction_cpu
                 accountant.step(noise_multiplier=sigma, sample_rate=sample_rate)
                 step += 1
                 with tracker.diagnostics():

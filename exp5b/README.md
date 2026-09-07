@@ -39,6 +39,12 @@ reported independently as `preconditioner_state_bytes`,
 `optimizer_state_bytes`; `temporal_state_bytes` is first plus second, and
 `total_algorithm_state_bytes` is their complete sum.
 
+The official private DP core does not retain clean clipped aggregates or
+`summed_grad`; clean aggregates, Gaussian replay, and all associated metrics
+are reconstructed in diagnostic-only segments. Noise replay shapes are derived
+from parameter metadata only and never require an extra per-sample-gradient
+reduction.
+
 Synthetic refresh uses pink-noise images and labels from
 `torch.randint(0, 10, ...)`. Refresh occurs before reading the current private
 batch. β2 uses `v_0=q_0` and `beta2 ** delta_t`, where `delta_t` is the actual

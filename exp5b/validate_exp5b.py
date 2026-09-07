@@ -33,6 +33,10 @@ def validate(c, runs, output):
             raise ValueError(f"Forbidden official optimizer: {path}")
         if meta.get("optimizer_is_official") is not False:
             raise ValueError(f"Official torch optimizer state is not explicitly disabled: {path}")
+        if (meta.get("dp_store_summed_grad") is not False or
+                meta.get("clean_aggregate_role") != "diagnostic_only" or
+                meta.get("noise_replay_shape_source") != "parameter_numel"):
+            raise ValueError(f"DP diagnostic/core boundary metadata mismatch: {path}")
         sigma = float(meta["noise_multiplier"])
         reference_sigma.setdefault(meta["seed"], sigma)
         if not np.isclose(sigma, reference_sigma[meta["seed"]], rtol=1e-12, atol=1e-12):
