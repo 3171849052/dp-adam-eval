@@ -1,0 +1,157 @@
+contrast,metric,seed,difference,mean,sd,improvement_direction
+dp_scalar_wiener - dp_sgd,final_accuracy,42,-0.5450999999999999,,,positive difference improves
+dp_scalar_wiener - dp_sgd,final_accuracy,7,-0.3456,,,positive difference improves
+dp_scalar_wiener - dp_sgd,final_accuracy,91,-0.4476,,,positive difference improves
+dp_scalar_wiener - dp_sgd,final_accuracy,aggregate,,-0.44609999999999994,0.0997584582880068,positive difference improves
+dp_scalar_wiener - dp_sgd,best_accuracy,42,-0.5450999999999999,,,positive difference improves
+dp_scalar_wiener - dp_sgd,best_accuracy,7,-0.3456,,,positive difference improves
+dp_scalar_wiener - dp_sgd,best_accuracy,91,-0.4476,,,positive difference improves
+dp_scalar_wiener - dp_sgd,best_accuracy,aggregate,,-0.44609999999999994,0.0997584582880068,positive difference improves
+dp_scalar_wiener - dp_sgd,late_mean_accuracy,42,-0.5746571428571428,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_mean_accuracy,7,-0.43078571428571427,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_mean_accuracy,91,-0.540114285714286,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_mean_accuracy,aggregate,,-0.5151857142857144,0.07510540756096035,positive difference improves
+dp_scalar_wiener - dp_sgd,accuracy_auc,42,-0.5860570093457944,,,positive difference improves
+dp_scalar_wiener - dp_sgd,accuracy_auc,7,-0.519164953271028,,,positive difference improves
+dp_scalar_wiener - dp_sgd,accuracy_auc,91,-0.5725135514018691,,,positive difference improves
+dp_scalar_wiener - dp_sgd,accuracy_auc,aggregate,,-0.5592451713395639,0.035364872735325376,positive difference improves
+dp_scalar_wiener - dp_sgd,final_test_loss,42,1.6713413110971451,,,negative difference improves
+dp_scalar_wiener - dp_sgd,final_test_loss,7,1.560619390273094,,,negative difference improves
+dp_scalar_wiener - dp_sgd,final_test_loss,91,1.6050124192714692,,,negative difference improves
+dp_scalar_wiener - dp_sgd,final_test_loss,aggregate,,1.6123243735472361,0.05572193862600294,negative difference improves
+dp_scalar_wiener - dp_sgd,late_relmse_noisy,42,-1725.3556649818522,,,negative difference improves
+dp_scalar_wiener - dp_sgd,late_relmse_noisy,7,-1650.9746072074477,,,negative difference improves
+dp_scalar_wiener - dp_sgd,late_relmse_noisy,91,-1521.9818248007298,,,negative difference improves
+dp_scalar_wiener - dp_sgd,late_relmse_noisy,aggregate,,-1632.7706989966764,102.90173187616337,negative difference improves
+dp_scalar_wiener - dp_sgd,late_relmse_filtered,42,-2004.7877854779554,,,negative difference improves
+dp_scalar_wiener - dp_sgd,late_relmse_filtered,7,-1946.7852369343213,,,negative difference improves
+dp_scalar_wiener - dp_sgd,late_relmse_filtered,91,-1844.220916076959,,,negative difference improves
+dp_scalar_wiener - dp_sgd,late_relmse_filtered,aggregate,,-1931.9313128297454,81.30749770646949,negative difference improves
+dp_scalar_wiener - dp_sgd,late_cosine_noisy,42,0.03682334643485691,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_cosine_noisy,7,0.035368849771232294,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_cosine_noisy,91,0.032212656588851196,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_cosine_noisy,aggregate,,0.03480161759831347,0.0023571019213242993,positive difference improves
+dp_scalar_wiener - dp_sgd,late_cosine_filtered,42,0.0449143353196365,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_cosine_filtered,7,0.0393694879660588,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_cosine_filtered,91,0.0379265655926858,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_cosine_filtered,aggregate,,0.0407367962927937,0.0036890893841829185,positive difference improves
+dp_scalar_wiener - dp_sgd,late_signal_retention,42,-0.9986274452939478,,,descriptive; interpret signal and noise jointly
+dp_scalar_wiener - dp_sgd,late_signal_retention,7,-0.9976163603637952,,,descriptive; interpret signal and noise jointly
+dp_scalar_wiener - dp_sgd,late_signal_retention,91,-0.9978286706041949,,,descriptive; interpret signal and noise jointly
+dp_scalar_wiener - dp_sgd,late_signal_retention,aggregate,,-0.9980241587539793,0.0005331368459645198,descriptive; interpret signal and noise jointly
+dp_scalar_wiener - dp_sgd,late_noise_retention,42,-0.9993446202634618,,,descriptive; interpret signal and noise jointly
+dp_scalar_wiener - dp_sgd,late_noise_retention,7,-0.9984441269261384,,,descriptive; interpret signal and noise jointly
+dp_scalar_wiener - dp_sgd,late_noise_retention,91,-0.9987381499420057,,,descriptive; interpret signal and noise jointly
+dp_scalar_wiener - dp_sgd,late_noise_retention,aggregate,,-0.9988422990438687,0.00045919205045941397,descriptive; interpret signal and noise jointly
+dp_scalar_wiener - dp_sgd,late_snr_gain_db,42,3.1370344175887466,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_snr_gain_db,7,1.7485994211417757,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_snr_gain_db,91,2.246984975454485,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_snr_gain_db,aggregate,,2.3775396047283355,0.7033642856004984,positive difference improves
+dp_scalar_wiener - dp_sgd,late_mse_reduction,42,0.9959088741349138,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_mse_reduction,7,0.9952392772741728,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_mse_reduction,91,0.9958322026510952,,,positive difference improves
+dp_scalar_wiener - dp_sgd,late_mse_reduction,aggregate,,0.9956601180200605,0.000366469410943493,positive difference improves
+dp_fisher_wiener - dp_sgd,final_accuracy,42,-0.07950000000000002,,,positive difference improves
+dp_fisher_wiener - dp_sgd,final_accuracy,7,-0.09090000000000009,,,positive difference improves
+dp_fisher_wiener - dp_sgd,final_accuracy,91,-0.12760000000000005,,,positive difference improves
+dp_fisher_wiener - dp_sgd,final_accuracy,aggregate,,-0.09933333333333338,0.025134504835650405,positive difference improves
+dp_fisher_wiener - dp_sgd,best_accuracy,42,-0.07950000000000002,,,positive difference improves
+dp_fisher_wiener - dp_sgd,best_accuracy,7,-0.09090000000000009,,,positive difference improves
+dp_fisher_wiener - dp_sgd,best_accuracy,91,-0.12760000000000005,,,positive difference improves
+dp_fisher_wiener - dp_sgd,best_accuracy,aggregate,,-0.09933333333333338,0.025134504835650405,positive difference improves
+dp_fisher_wiener - dp_sgd,late_mean_accuracy,42,-0.13272857142857153,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_mean_accuracy,7,-0.1557142857142858,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_mean_accuracy,91,-0.24271428571428588,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_mean_accuracy,aggregate,,-0.17705238095238107,0.058014653907674185,positive difference improves
+dp_fisher_wiener - dp_sgd,accuracy_auc,42,-0.2497602803738317,,,positive difference improves
+dp_fisher_wiener - dp_sgd,accuracy_auc,7,-0.2648915887850467,,,positive difference improves
+dp_fisher_wiener - dp_sgd,accuracy_auc,91,-0.3536892523364486,,,positive difference improves
+dp_fisher_wiener - dp_sgd,accuracy_auc,aggregate,,-0.28944704049844233,0.05614744393058584,positive difference improves
+dp_fisher_wiener - dp_sgd,final_test_loss,42,0.15163996069431301,,,negative difference improves
+dp_fisher_wiener - dp_sgd,final_test_loss,7,0.1929071333646774,,,negative difference improves
+dp_fisher_wiener - dp_sgd,final_test_loss,91,0.23268557715415955,,,negative difference improves
+dp_fisher_wiener - dp_sgd,final_test_loss,aggregate,,0.1924108904043833,0.04052508704057115,negative difference improves
+dp_fisher_wiener - dp_sgd,late_relmse_noisy,42,-1156.3422903905891,,,negative difference improves
+dp_fisher_wiener - dp_sgd,late_relmse_noisy,7,-1229.24258494812,,,negative difference improves
+dp_fisher_wiener - dp_sgd,late_relmse_noisy,91,-1377.3816953855296,,,negative difference improves
+dp_fisher_wiener - dp_sgd,late_relmse_noisy,aggregate,,-1254.3221902414127,112.63367432246828,negative difference improves
+dp_fisher_wiener - dp_sgd,late_relmse_filtered,42,-1994.3923856571882,,,negative difference improves
+dp_fisher_wiener - dp_sgd,late_relmse_filtered,7,-1939.4604906344648,,,negative difference improves
+dp_fisher_wiener - dp_sgd,late_relmse_filtered,91,-1841.6038449795155,,,negative difference improves
+dp_fisher_wiener - dp_sgd,late_relmse_filtered,aggregate,,-1925.1522404237228,77.3926938326423,negative difference improves
+dp_fisher_wiener - dp_sgd,late_cosine_noisy,42,0.011702072571336198,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_cosine_noisy,7,0.014888942606199797,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_cosine_noisy,91,0.0228000460572827,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_cosine_noisy,aggregate,,0.016463687078272896,0.005714115766060089,positive difference improves
+dp_fisher_wiener - dp_sgd,late_cosine_filtered,42,0.2290157786646307,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_cosine_filtered,7,0.25256694552249653,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_cosine_filtered,91,0.2918657035271064,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_cosine_filtered,aggregate,,0.2578161425714112,0.031752067901925085,positive difference improves
+dp_fisher_wiener - dp_sgd,late_signal_retention,42,-0.1963006301007849,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_sgd,late_signal_retention,7,-0.2317330308412151,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_sgd,late_signal_retention,91,-0.4306910739237829,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_sgd,late_signal_retention,aggregate,,-0.2862415782885943,0.1263451872747945,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_sgd,late_noise_retention,42,-0.986833137951656,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_sgd,late_noise_retention,7,-0.988229224289419,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_sgd,late_noise_retention,91,-0.9916604188623761,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_sgd,late_noise_retention,aggregate,,-0.9889075937011503,0.0024841093055319426,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_sgd,late_snr_gain_db,42,17.814055794927086,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_snr_gain_db,7,18.12410331220381,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_snr_gain_db,91,18.40092321308288,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_snr_gain_db,aggregate,,18.11302744007126,0.293590442335636,positive difference improves
+dp_fisher_wiener - dp_sgd,late_mse_reduction,42,0.9867489848682623,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_mse_reduction,7,0.9881338587435844,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_mse_reduction,91,0.991231598112601,,,positive difference improves
+dp_fisher_wiener - dp_sgd,late_mse_reduction,aggregate,,0.9887048139081491,0.0022952010205072398,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,final_accuracy,42,0.46559999999999996,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,final_accuracy,7,0.2546999999999999,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,final_accuracy,91,0.31999999999999995,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,final_accuracy,aggregate,,0.3467666666666666,0.10796778840623408,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,best_accuracy,42,0.46559999999999996,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,best_accuracy,7,0.2546999999999999,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,best_accuracy,91,0.31999999999999995,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,best_accuracy,aggregate,,0.3467666666666666,0.10796778840623408,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_mean_accuracy,42,0.4419285714285713,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_mean_accuracy,7,0.27507142857142847,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_mean_accuracy,91,0.29740000000000005,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_mean_accuracy,aggregate,,0.33813333333333323,0.0905799639210878,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,accuracy_auc,42,0.33629672897196267,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,accuracy_auc,7,0.25427336448598126,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,accuracy_auc,91,0.21882429906542056,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,accuracy_auc,aggregate,,0.2697981308411215,0.06025534602691394,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,final_test_loss,42,-1.519701350402832,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,final_test_loss,7,-1.3677122569084168,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,final_test_loss,91,-1.3723268421173098,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,final_test_loss,aggregate,,-1.419913483142853,0.08644962370296327,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_relmse_noisy,42,569.0133745912631,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_relmse_noisy,7,421.73202225932766,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_relmse_noisy,91,144.60012941520006,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_relmse_noisy,aggregate,,378.4485087552636,215.49187357337078,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_relmse_filtered,42,10.395399820767285,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_relmse_filtered,7,7.324746299856747,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_relmse_filtered,91,2.6170710974433393,,,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_relmse_filtered,aggregate,,6.779072406022457,3.9177697010966313,negative difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_cosine_noisy,42,-0.025121273863520706,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_cosine_noisy,7,-0.0204799071650325,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_cosine_noisy,91,-0.0094126105315685,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_cosine_noisy,aggregate,,-0.01833793052004057,0.008070413488782537,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_cosine_filtered,42,0.1841014433449942,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_cosine_filtered,7,0.2131974575564377,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_cosine_filtered,91,0.25393913793442063,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_cosine_filtered,aggregate,,0.2170793462786175,0.03508030346832878,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_signal_retention,42,0.8023268151931628,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_scalar_wiener,late_signal_retention,7,0.7658833295225801,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_scalar_wiener,late_signal_retention,91,0.567137596680412,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_scalar_wiener,late_signal_retention,aggregate,,0.711782580465385,0.12658459784891612,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_scalar_wiener,late_noise_retention,42,0.0125114823118059,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_scalar_wiener,late_noise_retention,7,0.010214902636719399,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_scalar_wiener,late_noise_retention,91,0.0070777310796296,,,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_scalar_wiener,late_noise_retention,aggregate,,0.0099347053427183,0.002727690599384123,descriptive; interpret signal and noise jointly
+dp_fisher_wiener - dp_scalar_wiener,late_snr_gain_db,42,14.677021377338338,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_snr_gain_db,7,16.375503891062035,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_snr_gain_db,91,16.153938237628395,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_snr_gain_db,aggregate,,15.735487835342923,0.9233289049607118,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_mse_reduction,42,-0.009159889266651455,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_mse_reduction,7,-0.0071054185305884365,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_mse_reduction,91,-0.004600604538494202,,,positive difference improves
+dp_fisher_wiener - dp_scalar_wiener,late_mse_reduction,aggregate,,-0.0069553041119113646,0.0022833462422775608,positive difference improves
