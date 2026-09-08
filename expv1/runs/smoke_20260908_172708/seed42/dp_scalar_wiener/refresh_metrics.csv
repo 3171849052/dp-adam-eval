@@ -1,0 +1,3 @@
+seed,method,config_fingerprint,step,refresh_time,active_state_bytes
+42,dp_scalar_wiener,d9c545447e9ad895a94ccf81dea4e55cc56ab5145782f0caa55cc6eaa21f329b,0,0.10054648481309414,10905072
+42,dp_scalar_wiener,d9c545447e9ad895a94ccf81dea4e55cc56ab5145782f0caa55cc6eaa21f329b,2,0.044559797272086143,10905072

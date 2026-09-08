@@ -1,0 +1,25 @@
+{
+  "dataset": "MNIST",
+  "model": "SimpleCNN",
+  "seeds": [
+    42
+  ],
+  "epochs": 1,
+  "batch_size": 4,
+  "epsilon": 1.0,
+  "delta": 1e-05,
+  "max_grad_norm": 1.0,
+  "optimizer": "SGD",
+  "learning_rate": 0.1,
+  "momentum": 0,
+  "beta": 1,
+  "K": 2,
+  "M_syn": 8,
+  "eval_interval": 1,
+  "threads": 4,
+  "device": "cpu",
+  "eps_num": 1e-12,
+  "train_subset": 16,
+  "test_subset": 32,
+  "smoke": true
+}

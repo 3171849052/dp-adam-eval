@@ -1,0 +1,57 @@
+{
+  "private": [
+    {
+      "step": 0,
+      "batch_indices": [
+        15,
+        8,
+        13,
+        0
+      ],
+      "model_hash": "06b8564e587af406ae0bb0cb073f63952903a7e080f3362b69963301e57fec09",
+      "parameters_finite": true,
+      "noise_rng_before": "2cda5d401032e9daa8fe04dfd4ebde0036a9d5ae819d8a5c9e7c82c2e5ec9bd4",
+      "noise_rng_after": "7806d8d13d8f3455db7ccb61b359643bbd82fa3ae461da69911e9da79efc6269"
+    },
+    {
+      "step": 1,
+      "batch_indices": [
+        4,
+        6,
+        2,
+        1
+      ],
+      "model_hash": "ebe68804faa1f533e6ce3fcf542609a391070b9a608270ec355e212aa6794bf2",
+      "parameters_finite": true,
+      "noise_rng_before": "7806d8d13d8f3455db7ccb61b359643bbd82fa3ae461da69911e9da79efc6269",
+      "noise_rng_after": "15344baaea9db8170e8ab7b7e1312eb6f9d6266daa541dbc9c1df39b51ba999c"
+    },
+    {
+      "step": 2,
+      "batch_indices": [
+        11,
+        10,
+        9,
+        3
+      ],
+      "model_hash": "0397e5befc9d8ab8160e9e4d8b31b586c7b7645f4a16d276b8ea112c999c4363",
+      "parameters_finite": true,
+      "noise_rng_before": "15344baaea9db8170e8ab7b7e1312eb6f9d6266daa541dbc9c1df39b51ba999c",
+      "noise_rng_after": "4929ef76be48c866a412e43779728d506abb1c1455cad8e9cdfc49e5eb6dc73b"
+    },
+    {
+      "step": 3,
+      "batch_indices": [
+        7,
+        14,
+        12,
+        5
+      ],
+      "model_hash": "d61ee370a44381858ca1bc327bc6080d3d9bb77b35f2278d33b6d7de16cd5b3e",
+      "parameters_finite": true,
+      "noise_rng_before": "4929ef76be48c866a412e43779728d506abb1c1455cad8e9cdfc49e5eb6dc73b",
+      "noise_rng_after": "222b6d79603f06b85957e0a943a73666c52d2a769f7b9e69780b36fc7faf590c"
+    }
+  ],
+  "synthetic": []
+}

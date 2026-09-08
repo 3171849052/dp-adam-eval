@@ -1,0 +1,3 @@
+seed,method,config_fingerprint,step,refresh_time,active_state_bytes
+42,dp_fisher_wiener,3f76aa913826ad704854bd521a05b204625619d7e36eb8afa1089abcd2dee569,0,0.17175063583999872,10905072
+42,dp_fisher_wiener,3f76aa913826ad704854bd521a05b204625619d7e36eb8afa1089abcd2dee569,2,0.19932609610259533,10905072
