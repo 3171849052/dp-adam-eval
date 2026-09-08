@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "runs": 18,
+  "seeds": [
+    42,
+    7,
+    91
+  ],
+  "methods": [
+    "syn_diag",
+    "syn_diag_beta1",
+    "syn_diag_beta2",
+    "syn_diag_beta12",
+    "dp_sgd_momentum",
+    "dp_kfc_momentum"
+  ],
+  "primary_contrasts": [
+    "Full - SynDiag",
+    "Full - syn_diag_beta1",
+    "Full - syn_diag_beta2",
+    "Full - dp_sgd_momentum",
+    "Full - dp_kfc_momentum"
+  ],
+  "source_matches_current_checkout": true
+}

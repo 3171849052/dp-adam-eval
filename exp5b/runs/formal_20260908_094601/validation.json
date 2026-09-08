@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "runs": 18,
+  "methods": [
+    "syn_diag",
+    "syn_diag_beta1",
+    "syn_diag_beta2",
+    "syn_diag_beta12",
+    "dp_sgd_momentum",
+    "dp_kfc_momentum"
+  ],
+  "seeds": [
+    42,
+    7,
+    91
+  ],
+  "steps_per_run": 1170,
+  "learning_rate": 0.1,
+  "pairing": "batch indices/hash, noise hash/RNG, and synthetic sample/label hashes",
+  "momentum": "shared post-DP FirstMomentState with beta1=.9 and bias correction",
+  "source_matches_current_checkout": true
+}
