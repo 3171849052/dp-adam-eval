@@ -1,0 +1,26 @@
+{
+  "experiment": "expv1b",
+  "seed": 42,
+  "single_seed_descriptive_only": true,
+  "no_significance_tests": true,
+  "learning_rates": [
+    0.1,
+    0.15,
+    0.2,
+    0.3,
+    0.5,
+    0.8
+  ],
+  "highest_final_accuracy_lr": 0.1,
+  "highest_accuracy_auc_lr": 0.1,
+  "dp_sgd_anchor_learning_rate": 0.1,
+  "runs": [
+    "dp_sgd_lr0p10",
+    "dp_fisher_wiener_lr0p10",
+    "dp_fisher_wiener_lr0p15",
+    "dp_fisher_wiener_lr0p20",
+    "dp_fisher_wiener_lr0p30",
+    "dp_fisher_wiener_lr0p50",
+    "dp_fisher_wiener_lr0p80"
+  ]
+}

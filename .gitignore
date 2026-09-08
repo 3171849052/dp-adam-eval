@@ -13,3 +13,4 @@ data/
 *.tmp
 *.log
 *.pt
+.opencode
