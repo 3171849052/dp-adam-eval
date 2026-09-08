@@ -43,8 +43,11 @@ def validate(c, runs, output, require_tests=True):
             assert meta['sample_rate'] == c['batch_size']/(c['train_subset'] or 60000)
             assert summary['parameters_finite'] and all(r['parameters_finite'] for r in pairing['private'])
             assert all(math.isfinite(v) for v in summary.values() if isinstance(v,(int,float)))
+            assert summary['diagnostic_seconds'] >= 0
+            assert summary['total_diagnostic_spectrum_time'] >= 0
+            assert summary['mean_diagnostic_spectrum_time'] >= 0
             assert 0 < summary['epsilon_spent'] <= c['epsilon']+.02
-            assert meta['diagnostics_enabled'] and meta['eigen_budget'] is None
+            assert meta['eigen_budget'] is None
             frames = {n: pd.read_csv(root/f'{n}_metrics.csv') for n in ('train','layer','eigenbin','refresh')}
             tr, la, eb, re = [frames[n] for n in ('train','layer','eigenbin','refresh')]
             assert tr.step.tolist() == list(range(total))
@@ -64,6 +67,15 @@ def validate(c, runs, output, require_tests=True):
                         assert frame[col].between(0,1).all()
                     if col in ('signal_retention','noise_retention'):
                         assert (frame[col]>=0).all()
+            assert 'diagnostic_spectrum_time' in re.columns
+            assert (re.diagnostic_spectrum_time >= 0).all()
+            assert math.isclose(summary['total_diagnostic_spectrum_time'],
+                                float(re.diagnostic_spectrum_time.sum()),
+                                rel_tol=1e-9, abs_tol=1e-9)
+            if not meta['diagnostics_enabled']:
+                assert summary['diagnostic_seconds'] == 0
+                assert summary['total_diagnostic_spectrum_time'] == 0
+                assert (re.diagnostic_spectrum_time == 0).all()
             expected_eval = [s for s in range(total) if (s+1)%c['eval_interval']==0 or s+1==total]
             assert tr.loc[tr.test_accuracy.notna(),'step'].tolist()==expected_eval
             refresh_steps = list(range(0,total,c['K'])) if method!='dp_sgd' else []
@@ -86,16 +98,21 @@ def validate(c, runs, output, require_tests=True):
                     assert frame['count'].max()-frame['count'].min()<=1
             else:
                 assert eb.empty
-            records[method]=(meta,pairing)
+            records[method]=(meta,summary,pairing)
             count += 1
-        base, pair = records['dp_sgd']
-        for meta, pairing in records.values():
+        base, base_summary, pair = records['dp_sgd']
+        assert base_summary['active_state_bytes'] == 0
+        scalar_summary = records['dp_scalar_wiener'][1]
+        fisher_summary = records['dp_fisher_wiener'][1]
+        assert scalar_summary['active_state_bytes'] > 0
+        assert fisher_summary['active_state_bytes'] > scalar_summary['active_state_bytes']
+        for meta, summary, pairing in records.values():
             for k in ('noise_multiplier','sample_rate','total_steps','initial_model_hash'):
                 assert meta[k]==base[k]
             for a,b in zip(pair['private'],pairing['private']):
                 for k in ('batch_indices','noise_rng_before','noise_rng_after'):
                     assert a[k]==b[k], (seed,k)
-        assert records['dp_scalar_wiener'][1]['synthetic']==records['dp_fisher_wiener'][1]['synthetic']
+        assert records['dp_scalar_wiener'][2]['synthetic']==records['dp_fisher_wiener'][2]['synthetic']
     result = dict(passed=True, runs=count, fingerprint=fp, provenance=current,
                   diagnostics_isolation_tests=load(evidence) if require_tests else 'internal test')
     save_json(output/'validation.json', result)

@@ -30,17 +30,21 @@ def reconstruction(s, y, hat, wg, wn, identity=False):
     return row
 
 
-def gain_stats(state, method):
-    if state is None:
+def gain_stats(active_layer_state, diagnostic_layer_state, method):
+    if active_layer_state is None:
         return dict(H_mean=1., H_std=0., H_min=1., H_max=1.,
                     **{f'H_q{q}': 1. for q in (10,25,50,75,90)})
-    lf = (state['lambda_G'][:, None]*state['lambda_A'][None, :]).double().flatten()
-    h = state['H'].double().flatten() if method == 'dp_fisher_wiener' else state['scalar_h'].double().reshape(1)
-    row = dict(H_mean=float(h.mean()), H_std=float(h.std(unbiased=False)), H_min=float(h.min()), H_max=float(h.max()),
-               lambdaF_mean=float(lf.mean()), lambdaF_median=float(lf.quantile(.5)))
+    h = (active_layer_state['H'].double().flatten()
+         if method == 'dp_fisher_wiener'
+         else active_layer_state['scalar_h'].double().reshape(1))
+    row = dict(H_mean=float(h.mean()), H_std=float(h.std(unbiased=False)), H_min=float(h.min()), H_max=float(h.max()))
     row.update({f'H_q{q}': float(h.quantile(q/100)) for q in (10,25,50,75,90)})
-    row.update({f'lambdaF_q{q}': float(lf.quantile(q/100)) for q in (10,90)})
-    row.update({k: float(state[k]) for k in ('trace_A','trace_G','trace_F')})
+    diagnostic = diagnostic_layer_state
+    if diagnostic is None:
+        return row
+    row.update(lambdaF_mean=diagnostic['lambdaF_mean'], lambdaF_median=diagnostic['lambdaF_median'])
+    row.update({f'lambdaF_q{q}': diagnostic[f'lambdaF_q{q}'] for q in (10,90)})
+    row.update({k: diagnostic[k] for k in ('trace_A','trace_G','trace_F')})
     return row
 
 
@@ -65,7 +69,8 @@ def eigenbins(s, n, state):
 
 
 @torch.no_grad()
-def diagnose(model, noisy, state, method, refresh=False, eigen_budget=None):
+def diagnose(model, noisy, active_state, diagnostic_state, method,
+             refresh=False, eigen_budget=None):
     base = getattr(model, '_module', model)
     layers, bins, all_values = [], [], []
     for name in LAYERS:
@@ -73,15 +78,18 @@ def diagnose(model, noisy, state, method, refresh=False, eigen_budget=None):
         s = pack_layer_gradient(layer, 'summed_grad')
         y = noisy[name]
         hat = pack_layer_gradient(layer)
-        st = None if state is None else state[name]
-        wg = apply_filter_to_copy(s, st, method)
-        wn = apply_filter_to_copy(y-s, st, method)
+        active = None if active_state is None else active_state[name]
+        diagnostic = None if diagnostic_state is None else diagnostic_state[name]
+        wg = apply_filter_to_copy(s, active, method)
+        wn = apply_filter_to_copy(y-s, active, method)
         values = (s, y, hat, wg, wn)
-        row = dict(layer=name, **reconstruction(*values, identity=method=='dp_sgd'), **gain_stats(st, method))
-        row['kappa'] = float(s.double().square().sum())/(float(st['trace_F'])+EPS) if st is not None else None
+        row = dict(layer=name, **reconstruction(*values, identity=method=='dp_sgd'),
+                   **gain_stats(active, diagnostic, method))
+        row['kappa'] = (float(s.double().square().sum()) /
+                        (diagnostic['trace_F']+EPS) if diagnostic is not None else None)
         layers.append(row)
         all_values.append(values)
         if refresh and method == 'dp_fisher_wiener' and (eigen_budget is None or LAYERS.index(name) < eigen_budget):
-            bins.extend(dict(layer=name, **r) for r in eigenbins(s, y-s, st))
+            bins.extend(dict(layer=name, **r) for r in eigenbins(s, y-s, active))
     global_row = reconstruction(*(torch.cat([v[i].flatten() for v in all_values]) for i in range(5)), identity=method=='dp_sgd')
     return global_row, layers, bins

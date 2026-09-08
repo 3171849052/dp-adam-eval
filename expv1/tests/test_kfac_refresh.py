@@ -33,7 +33,7 @@ def test_covariance_conventions(config):
         for m in (cov.A[n],cov.G[n]):
             torch.testing.assert_close(m,m.T)
             assert torch.linalg.eigvalsh(m).min()>-1e-5
-    st=fw.build_wiener_state(cov,2,1,4)
+    st=fw.build_fisher_state(cov,2,1,4)
     assert all(((v['H']>=0)&(v['H']<=1)).all() for v in st.values())
     assert all(t.dtype==torch.float32 for v in st.values() for t in v.values())
 

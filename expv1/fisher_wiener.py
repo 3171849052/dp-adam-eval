@@ -42,23 +42,73 @@ def build_covariances(model_state, samples, c, dev):
 
 
 @torch.no_grad()
-def build_wiener_state(covariances, sigma, max_grad_norm, batch_size):
+def build_scalar_state(covariances, sigma, max_grad_norm, batch_size):
+    """Build only the state required by the scalar Wiener filter.
+
+    In particular, this algorithmic path must not inspect the covariance
+    spectrum: scalar_h is completely determined by the two traces.
+    """
     r = (sigma * max_grad_norm / batch_size)**2
     result = {}
     for name, A in covariances.A.items():
         A, G = A.float(), covariances.G[name].float()
-        la, qa = torch.linalg.eigh(A)
-        lg, qg = torch.linalg.eigh(G)
-        la, lg = la.clamp_min(0), lg.clamp_min(0)
-        lf = lg[:, None] * la[None, :]
         trace_a, trace_g = A.trace(), G.trace()
-        mean = trace_a * trace_g / lf.numel()
-        result[name] = dict(Q_A=qa, lambda_A=la, Q_G=qg, lambda_G=lg,
-            H=torch.where(lf+r > 0, lf/(lf+r), torch.zeros_like(lf)),
-            scalar_h=mean/(mean+r), trace_A=trace_a, trace_G=trace_g,
-            trace_F=trace_a*trace_g)
+        mean = trace_a * trace_g / (A.shape[0] * G.shape[0])
+        scalar_h = torch.where(mean + r > 0, mean / (mean + r), torch.zeros_like(mean))
+        result[name] = {'scalar_h': scalar_h.float()}
     return result
 
+
+@torch.no_grad()
+def build_fisher_state(covariances, sigma, max_grad_norm, batch_size):
+    """Build the FP32 active state required by the Fisher Wiener filter."""
+    r = (sigma * max_grad_norm / batch_size)**2
+    result = {}
+    for name, A in covariances.A.items():
+        A, G = A.float(), covariances.G[name].float()
+        lambda_a, q_a = torch.linalg.eigh(A)
+        lambda_g, q_g = torch.linalg.eigh(G)
+        lambda_a = lambda_a.clamp_min(0)
+        lambda_g = lambda_g.clamp_min(0)
+        lambda_f = lambda_g[:, None] * lambda_a[None, :]
+        H = torch.where(lambda_f + r > 0, lambda_f / (lambda_f + r),
+                        torch.zeros_like(lambda_f))
+        result[name] = dict(Q_A=q_a.float(), lambda_A=lambda_a.float(),
+            Q_G=q_g.float(), lambda_G=lambda_g.float(), H=H.float())
+    return result
+
+
+def _spectrum_summary(lambda_f, trace_a, trace_g):
+    values = lambda_f.double().flatten()
+    return dict(trace_A=float(trace_a), trace_G=float(trace_g),
+        trace_F=float(trace_a * trace_g), lambdaF_mean=float(values.mean()),
+        lambdaF_median=float(values.quantile(.5)),
+        lambdaF_q10=float(values.quantile(.1)), lambdaF_q90=float(values.quantile(.9)))
+
+
+@torch.no_grad()
+def build_diagnostic_state(covariances, active_state, method):
+    """Build small research-only summaries, separate from algorithm state.
+
+    Fisher reuses active eigenvalues. Scalar may reconstruct eigenvalues here
+    solely for diagnostics; callers are responsible for timing this outside
+    the algorithmic refresh and for calling this only when diagnostics are on.
+    """
+    if method not in ('dp_scalar_wiener', 'dp_fisher_wiener'):
+        return None
+    result = {}
+    for name, A in covariances.A.items():
+        A, G = A.float(), covariances.G[name].float()
+        trace_a, trace_g = A.trace(), G.trace()
+        if method == 'dp_fisher_wiener':
+            lambda_a = active_state[name]['lambda_A']
+            lambda_g = active_state[name]['lambda_G']
+        else:
+            lambda_a = torch.linalg.eigvalsh(A).clamp_min(0)
+            lambda_g = torch.linalg.eigvalsh(G).clamp_min(0)
+        lambda_f = lambda_g[:, None] * lambda_a[None, :]
+        result[name] = _spectrum_summary(lambda_f, trace_a, trace_g)
+    return result
 
 def pack_layer_gradient(layer, source='grad'):
     weight = getattr(layer.weight, source).detach().reshape(layer.weight.shape[0], -1)

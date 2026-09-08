@@ -59,9 +59,27 @@ H_{ji}=\frac{\lambda_{G,j}\lambda_{A,i}}{\lambda_{G,j}\lambda_{A,i}+r},\qquad
 \hat Y=Q_G[H\odot(Q_G^TYQ_A)]Q_A^T.
 \]
 
-active state 为 FP32：Q_A/lambda_A/Q_G/lambda_G/H/scalar_h/trace_A/trace_G/trace_F。
-scalar 也计算同一分解用于完整 spectrum 诊断，成本如实计入。仅因零分母时定义 H=0
-以避免 0/0；正式 r>0。统计 power/sum 使用 float64，filter/basis 使用实际 FP32 state。
+Fisher active state 为 FP32：Q_A/lambda_A/Q_G/lambda_G/H；scalar active state 仅包含每层
+一个 FP32 scalar_h。trace 和 Fisher spectrum summary 属于独立 diagnostic state，不会被
+filter、optimizer 或 refresh decision 使用。仅因零分母时定义 H=0 以避免 0/0；正式 r>0。
+统计 power/sum 使用 float64，filter/basis 使用实际 FP32 state。
+
+## Scalar baseline cost accounting
+
+`dp_scalar_wiener` 的算法 active state 仅包含每层的 `scalar_h`。Scalar training 不需要
+Fisher eigendecomposition；`scalar_h` 只由 `trace(A)`、`trace(G)` 和固定的 `r` 计算。
+
+为保持研究诊断中的 `lambdaF_median`、`lambdaF_q10`、`lambdaF_q90`，在
+`diagnostics=True` 时可以额外进行 diagnostic-only eigenspectrum computation。该计算：
+
+- 不参与训练，不影响 `scalar_h` 或训练参数/RNG 轨迹；
+- 不进入 `refresh_time` 或 `active_state_bytes`；
+- 进入 `diagnostic_seconds`，因而从 `core_training_runtime` 中扣除；
+- `diagnostics=False` 时完全不执行。
+
+Fisher-Wiener 的 eigendecomposition 是算法本身所需，所以计入 Fisher 的
+`refresh_time` 和 core cost。这样 scalar 与 Fisher 的 runtime/memory baseline 使用一致、
+可审计的 cost accounting。
 
 ## 时序、RNG 和 privacy
 
@@ -139,10 +157,13 @@ accuracy_auc 对所有 evaluation points 的 normalized progress=(step+1)/total 
 trapezoid integral 再除 progress span；只有一个点则取其 accuracy，不补造 step 0 点。
 
 wall_time 是训练 loop 含 evaluation/audit/diagnostics，不含 setup/data loading/最终序列化。
-refresh_time 包括 synthetic 生成、hash、covariance/eigh/state 构建。
+scalar `refresh_time` 包括 synthetic 生成、hash、covariance/trace/state 构建；Fisher
+`refresh_time` 还包括算法所需的 covariance eigendecomposition/H 构建。Scalar 的
+diagnostic-only spectrum reconstruction 单独记录在 `diagnostic_spectrum_time`，不污染
+scalar core runtime。
 filter_time 仅实际训练 filter（CUDA 同步计时），DP-SGD=0。
 core_training_runtime=wall_time-diagnostic_seconds，包括共同 evaluation 和 pairing 审计。
-记录 total/mean refresh/filter time、refresh count、active tensor bytes 和 overall peak
+记录 total/mean refresh/filter/diagnostic-spectrum time、refresh count、active tensor bytes 和 overall peak
 CUDA allocated memory（包含诊断；CPU=0）。不将它标为排除诊断的 core peak。
 
 ## 输出与分析

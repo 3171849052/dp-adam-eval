@@ -12,7 +12,8 @@ from opacus.accountants.utils import get_noise_multiplier
 from expv1.common import (ROOT, METHODS, LAYERS, read_config, check_config, fingerprint,
     provenance, require_pinned, output_path, save_json, write_csv, datasets,
     set_seed, SimpleCNN, RNGStream, digest)
-from expv1.fisher_wiener import (synthetic_samples, build_covariances, build_wiener_state,
+from expv1.fisher_wiener import (synthetic_samples, build_covariances,
+    build_scalar_state, build_fisher_state, build_diagnostic_state,
     pack_layer_gradient, apply_fisher_wiener, apply_scalar_wiener, state_bytes)
 from expv1.metrics import diagnose
 from dp_kfac.privacy import clip_and_noise_gradients, _compute_per_sample_norms_squared
@@ -25,7 +26,8 @@ def sync(model):
 
 
 def private_update(model, active, optimizer, rng, sigma, c, b, method,
-                   diagnostics=True, refresh=False, eigen_budget=None):
+                   diagnostics=True, refresh=False, eigen_budget=None,
+                   diagnostic_state=None):
     if method not in METHODS:
         raise ValueError(method)
     diagnostic_seconds = 0.
@@ -65,7 +67,8 @@ def private_update(model, active, optimizer, rng, sigma, c, b, method,
     if diagnostics:
         sync(model)
         t = time.perf_counter()
-        rows, layers, bins = diagnose(model, noisy, active, method, refresh, eigen_budget)
+        rows, layers, bins = diagnose(model, noisy, active, diagnostic_state,
+                                      method, refresh, eigen_budget)
         del noisy
         sync(model)
         diagnostic_seconds += time.perf_counter()-t
@@ -147,7 +150,7 @@ def train(c, seed, method, output, data_override=None, *, diagnostics=True, eige
         diagnostics='Non-DP research statistics, never consumed by training', output=str(root))
     save_json(root/'metadata.json', meta)
     rows, layers, bins, refreshes, audits, syn_audits = [], [], [], [], [], []
-    active, step, diagnostic_seconds = None, 0, 0.
+    active, diagnostic_state, step, diagnostic_seconds = None, None, 0, 0.
     if dev.type == 'cuda':
         torch.cuda.reset_peak_memory_stats(dev)
     sync(model)
@@ -158,28 +161,47 @@ def train(c, seed, method, output, data_override=None, *, diagnostics=True, eige
             for _ in range(len(loader)):
                 refreshed = step % c['K'] == 0 and method != 'dp_sgd'
                 refresh_time = 0.
+                diagnostic_spectrum_time = 0.
                 # Refresh precedes next(iterator): no current private batch access.
                 if refreshed:
                     sync(model)
                     t = time.perf_counter()
                     samples, sa = synthetic_samples(c, dev, syn_rng)
                     cov = build_covariances(model._module.state_dict(), samples, c, dev)
-                    active = build_wiener_state(cov, sigma, c['max_grad_norm'], c['batch_size'])
-                    del samples, cov
+                    if method == 'dp_scalar_wiener':
+                        active = build_scalar_state(cov, sigma, c['max_grad_norm'], c['batch_size'])
+                    elif method == 'dp_fisher_wiener':
+                        active = build_fisher_state(cov, sigma, c['max_grad_norm'], c['batch_size'])
+                    else:
+                        raise ValueError(method)
                     sync(model)
                     refresh_time = time.perf_counter()-t
-                    refreshes.append(dict(step=step, refresh_time=refresh_time, active_state_bytes=state_bytes(active)))
+                    if diagnostics:
+                        sync(model)
+                        t = time.perf_counter()
+                        diagnostic_state = build_diagnostic_state(cov, active, method)
+                        sync(model)
+                        diagnostic_spectrum_time = time.perf_counter()-t
+                        diagnostic_seconds += diagnostic_spectrum_time
+                    else:
+                        diagnostic_state = None
+                    del samples, cov
+                    refreshes.append(dict(step=step, refresh_time=refresh_time,
+                        diagnostic_spectrum_time=diagnostic_spectrum_time,
+                        active_state_bytes=state_bytes(active)))
                     syn_audits.append(dict(step=step, **sa))
                 x, y, indices = next(iterator)
                 model.zero_grad(set_to_none=True)
                 loss = F.cross_entropy(model(x.to(dev)), y.to(dev), reduction='sum')
                 loss.backward()
                 row, lr, er, audit, dt = private_update(model, active, optimizer, noise_rng, sigma, c,
-                    len(x), method, diagnostics, refreshed, eigen_budget)
+                    len(x), method, diagnostics, refreshed, eigen_budget,
+                    diagnostic_state)
                 diagnostic_seconds += dt
                 accountant.step(noise_multiplier=sigma, sample_rate=q)
                 row.update(step=step, epoch=epoch, train_loss=float(loss.detach())/len(x),
-                    refresh_time=refresh_time, active_state_bytes=state_bytes(active), test_loss=None, test_accuracy=None)
+                    refresh_time=refresh_time, diagnostic_spectrum_time=diagnostic_spectrum_time,
+                    active_state_bytes=state_bytes(active), test_loss=None, test_accuracy=None)
                 if (step+1) % c['eval_interval'] == 0 or step+1 == total:
                     row.update(evaluate(model, test_loader, dev))
                 rows.append(row)
@@ -199,6 +221,7 @@ def train(c, seed, method, output, data_override=None, *, diagnostics=True, eige
         auc = float(np.trapezoid(acc, progress)/(progress[-1]-progress[0])) if len(ev)>1 else acc[0]
         late = [r['test_accuracy'] for r in ev if r['step']+1 > total/2]
         rt = sum(r['refresh_time'] for r in refreshes)
+        dst = sum(r['diagnostic_spectrum_time'] for r in refreshes)
         ft = sum(r['wiener_filter_time'] for r in rows)
         summary = dict(seed=seed, method=method, fingerprint=fingerprint(c), completed_steps=step,
             epsilon_spent=accountant.get_epsilon(c['delta']), noise_multiplier=sigma,
@@ -207,6 +230,8 @@ def train(c, seed, method, output, data_override=None, *, diagnostics=True, eige
             parameters_finite=True, wall_time=wall, diagnostic_seconds=diagnostic_seconds,
             core_training_runtime=wall-diagnostic_seconds, total_refresh_time=rt,
             mean_refresh_time=rt/len(refreshes) if refreshes else 0., number_of_refreshes=len(refreshes),
+            total_diagnostic_spectrum_time=dst,
+            mean_diagnostic_spectrum_time=dst/len(refreshes) if refreshes else 0.,
             total_wiener_filter_time=ft, mean_wiener_filter_time=ft/total,
             active_state_bytes=state_bytes(active), peak_cuda_allocated_memory=torch.cuda.max_memory_allocated(dev) if dev.type=='cuda' else 0)
         save_json(root/'summary.json', summary)
@@ -215,8 +240,11 @@ def train(c, seed, method, output, data_override=None, *, diagnostics=True, eige
     finally:
         model.remove_hooks()
         for name, values in [('train',rows),('layer',layers),('eigenbin',bins),('refresh',refreshes)]:
+            empty_fields = (['seed','method','config_fingerprint','step','refresh_time',
+                             'diagnostic_spectrum_time','active_state_bytes']
+                            if name == 'refresh' else ['seed','method','config_fingerprint','step','layer'])
             write_csv(root/f'{name}_metrics.csv', [dict(seed=seed, method=method, config_fingerprint=fingerprint(c), **r) for r in values],
-                fields=None if values else ['seed','method','config_fingerprint','step','layer'])
+                fields=None if values else empty_fields)
         save_json(root/'pairing.json', dict(private=audits, synthetic=syn_audits))
     print(f'Completed seed={seed} {method}: {step} steps, accuracy={acc[-1]:.4f}', flush=True)
     return meta

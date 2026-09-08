@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from unittest.mock import patch
 import torch
 import pytest
 from torch.utils.data import TensorDataset
@@ -56,3 +57,11 @@ def test_refresh_precedes_private_read(config,tmp_path):
     with patch.object(tr.Indexed,'__getitem__',get),patch.object(tr,'build_covariances',side_effect=build):
         train(config,42,'dp_fisher_wiener',tmp_path,data())
     assert events==['refresh']+['read']*8+['refresh']+['read']*8
+
+
+def test_scalar_diagnostics_off_never_eigendecomposes(config,tmp_path):
+    with patch.object(torch.linalg, 'eigh', side_effect=AssertionError('scalar algorithm called eigh')), \
+         patch.object(torch.linalg, 'eigvalsh', side_effect=AssertionError('scalar algorithm called eigvalsh')):
+        meta=train(config,42,'dp_scalar_wiener',tmp_path,data(),diagnostics=False)
+    assert meta['diagnostic_seconds'] == 0
+    assert meta['total_diagnostic_spectrum_time'] == 0
