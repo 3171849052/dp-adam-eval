@@ -42,6 +42,12 @@ REQUIRED_NODEIDS = {
     "expv1b/tests/test_lr_sweep.py::test_effective_signal_lr",
     "expv1b/tests/test_regression.py::test_regression",
     "expv1b/tests/test_pipeline.py::test_pipeline",
+    "expv1b/tests/test_validation_edges.py::test_formal_nonanchor_hash_is_not_fixed",
+    "expv1b/tests/test_validation_edges.py::test_formal_nonanchor_wrongly_none_regression",
+    "expv1b/tests/test_validation_edges.py::test_diverged_fisher_synthetic_pairing_uses_common_prefix",
+    "expv1b/tests/test_validation_edges.py::test_completed_fisher_synthetic_pairing_requires_full_length",
+    "expv1b/tests/test_validation_edges.py::test_divergence_on_refresh_step_accepts_existing_refresh",
+    "expv1b/tests/test_validation_edges.py::test_completed_refresh_schedule",
 }
 PASSED = set()
 

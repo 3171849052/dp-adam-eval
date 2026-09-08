@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "tests": 11,
+  "tests": 18,
   "required_nodeids": [
     "expv1b/tests/test_lr_sweep.py::test_effective_signal_lr",
     "expv1b/tests/test_lr_sweep.py::test_lr_grid_exact",
@@ -8,7 +8,13 @@
     "expv1b/tests/test_pairing.py::test_paired_rng",
     "expv1b/tests/test_pipeline.py::test_diagnostic_isolation",
     "expv1b/tests/test_pipeline.py::test_pipeline",
-    "expv1b/tests/test_regression.py::test_regression"
+    "expv1b/tests/test_regression.py::test_regression",
+    "expv1b/tests/test_validation_edges.py::test_completed_fisher_synthetic_pairing_requires_full_length",
+    "expv1b/tests/test_validation_edges.py::test_completed_refresh_schedule",
+    "expv1b/tests/test_validation_edges.py::test_diverged_fisher_synthetic_pairing_uses_common_prefix",
+    "expv1b/tests/test_validation_edges.py::test_divergence_on_refresh_step_accepts_existing_refresh",
+    "expv1b/tests/test_validation_edges.py::test_formal_nonanchor_hash_is_not_fixed",
+    "expv1b/tests/test_validation_edges.py::test_formal_nonanchor_wrongly_none_regression"
   ],
   "passed_nodeids": [
     "expv1b/tests/test_config.py::test_config_protocol",
@@ -21,7 +27,14 @@
     "expv1b/tests/test_pairing.py::test_paired_rng",
     "expv1b/tests/test_pipeline.py::test_diagnostic_isolation",
     "expv1b/tests/test_pipeline.py::test_pipeline",
-    "expv1b/tests/test_regression.py::test_regression"
+    "expv1b/tests/test_regression.py::test_regression",
+    "expv1b/tests/test_validation_edges.py::test_completed_fisher_synthetic_pairing_requires_full_length",
+    "expv1b/tests/test_validation_edges.py::test_completed_refresh_schedule",
+    "expv1b/tests/test_validation_edges.py::test_diverged_fisher_synthetic_pairing_uses_common_prefix",
+    "expv1b/tests/test_validation_edges.py::test_divergence_between_refresh_steps",
+    "expv1b/tests/test_validation_edges.py::test_divergence_on_refresh_step_accepts_existing_refresh",
+    "expv1b/tests/test_validation_edges.py::test_formal_nonanchor_hash_is_not_fixed",
+    "expv1b/tests/test_validation_edges.py::test_formal_nonanchor_wrongly_none_regression"
   ],
   "provenance": {
     "upstream/__init__.py": "8a93b2fa0821035916d56b77f5cd92dcd2f60b85792cb391b6b45625c47c338c",
@@ -50,14 +63,15 @@
     "expv1b/plot_expv1b.py": "f27cdb328a7bf947800e70a813925ba5e7158efe072bb397c37b09cc0f462674",
     "expv1b/summarize_expv1b.py": "95381afa0058048b83d39bf469e10e686ab2210d9a85bce9e40b286c63784f5a",
     "expv1b/tests/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-    "expv1b/tests/conftest.py": "b975a379d8569bee995904031bf4b3608135e4e2433958d510c5e4924872d1e5",
+    "expv1b/tests/conftest.py": "b32ac33909e83a9b6790394f248563ca2d962d6e1afc373139c308d682aa6842",
     "expv1b/tests/test_config.py": "2ab80ceb05131d21a1d409b4e7cac10dc00adcc9634c1e1798a3b7fff087b1f3",
     "expv1b/tests/test_lr_sweep.py": "dd80b3089cc3456fa3df6d437127673be136df679e63c409f7999ef9e58a4d9a",
     "expv1b/tests/test_pairing.py": "b950165f140c25aca14f649ddeb39d1b196bf6a09a188d6d77cd1d6543d2ff51",
     "expv1b/tests/test_pipeline.py": "6ff92ef9688c2fbf370007cbe0a37da0fee21d65d4a67a12f57c4c5356c1d594",
     "expv1b/tests/test_regression.py": "d646a212d845832cb9022e62ddb424476e3b4516fdda7cf17b76178ddc99dc65",
+    "expv1b/tests/test_validation_edges.py": "441c6583cef447281da2c976cd4fff101a1e86669b47626fe2e6b365e567f822",
     "expv1b/train_expv1b.py": "f8f7ee076e80e35ffc75b02c216f963298d1616b487ed66600f87468544cdeef",
-    "expv1b/validate_expv1b.py": "5491bf50ba813b17b7e102ad7b33cff2111bd70a3a14d3ad4cdac51d045564f1",
+    "expv1b/validate_expv1b.py": "456ca623edda320dbf0564c9465ebc27c52705138cebbcb036c708eee75433de",
     "upstream_git_commit": "eb31b9aeb2280642684f4cedfa65cc02b76c76cd",
     "upstream_git_dirty": false,
     "upstream_git_status": "",

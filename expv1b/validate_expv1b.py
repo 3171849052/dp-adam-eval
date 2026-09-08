@@ -30,6 +30,23 @@ ANCHORS = {
 }
 
 
+def _should_check_anchor_hash(c, run_id):
+    """Only the two ExpV1 lr=.10 regression runs have fixed hashes."""
+    return not c["smoke"] and run_id in ANCHORS
+
+
+def _validate_final_hash(c, run_id, summary):
+    """Validate hash shape for every completed run and value only for anchors."""
+    value = summary.get("final_model_hash")
+    assert isinstance(value, str) and len(value) == 64
+    try:
+        int(value, 16)
+    except (TypeError, ValueError) as exc:
+        raise AssertionError("final_model_hash must be a 64-character hex string") from exc
+    if _should_check_anchor_hash(c, run_id):
+        assert value == ANCHORS[run_id], (run_id, value)
+
+
 def load(path):
     return json.loads(Path(path).read_text())
 
@@ -56,6 +73,45 @@ def _compare_pairing(reference, actual, keys):
     for ref, got in zip(reference, actual):
         for key in keys:
             assert ref[key] == got[key], (key, ref.get("step"))
+
+
+def _compare_pairing_prefix(reference, actual, keys, expected_steps=None):
+    """Strictly compare the common prefix of two paired streams.
+
+    ``expected_steps`` can be supplied to prove that each stream has no
+    missing refresh/private step. Without it, the shorter stream must still be
+    an exact prefix of the longer stream's step sequence.
+    """
+    reference_steps = [item["step"] for item in reference]
+    actual_steps = [item["step"] for item in actual]
+    if expected_steps is not None:
+        expected_steps = list(expected_steps)
+        assert reference_steps == expected_steps[:len(reference_steps)]
+        assert actual_steps == expected_steps[:len(actual_steps)]
+    elif len(reference_steps) <= len(actual_steps):
+        assert reference_steps == actual_steps[:len(reference_steps)]
+    else:
+        assert actual_steps == reference_steps[:len(actual_steps)]
+    common = min(len(reference), len(actual))
+    for ref, got in zip(reference[:common], actual[:common]):
+        for key in keys:
+            assert ref[key] == got[key], (key, ref.get("step"))
+
+
+def expected_refresh_steps(*, method, status, completed_steps, diverged_step,
+                           planned_steps, K):
+    """Return refreshes that were expected before each attempted private step."""
+    if method == "dp_sgd":
+        return []
+    assert method == "dp_fisher_wiener"
+    assert K > 0 and planned_steps >= 0
+    if status == "completed":
+        return list(range(0, planned_steps, K))
+    assert status == "diverged"
+    assert diverged_step is not None
+    assert 0 <= diverged_step < planned_steps
+    assert completed_steps <= diverged_step + 1
+    return list(range(0, diverged_step + 1, K))
 
 
 def _validate_regression(c, runs):
@@ -132,10 +188,11 @@ def validate(c, runs, output, require_tests=True):
         assert 0 <= completed_steps <= planned
         if status == "completed":
             assert completed_steps == planned and summary["parameters_finite"]
-            assert summary["final_model_hash"] == (ANCHORS.get(run_id) if not c["smoke"] else summary["final_model_hash"])
+            _validate_final_hash(c, run_id, summary)
         else:
             assert summary["diverged_step"] is not None
-            assert summary["diverged_step"] < planned
+            assert 0 <= summary["diverged_step"] < planned
+            assert completed_steps <= summary["diverged_step"] + 1
 
         train = pd.read_csv(root / "train_metrics.csv")
         layer = pd.read_csv(root / "layer_metrics.csv")
@@ -162,10 +219,14 @@ def validate(c, runs, output, require_tests=True):
         assert set(train.config_fingerprint) <= {fp}
         assert set(layer.config_fingerprint) <= {fp}
         assert set(refresh.config_fingerprint) <= {fp}
-        expected_refresh = list(range(0, completed_steps, c["K"])) if method == "dp_fisher_wiener" else []
+        expected_refresh = expected_refresh_steps(
+            method=method, status=status, completed_steps=completed_steps,
+            diverged_step=summary["diverged_step"], planned_steps=planned, K=c["K"],
+        )
         assert refresh.step.tolist() == expected_refresh
         assert [item["step"] for item in pairing["private"]] == list(range(completed_steps))
         assert [item["step"] for item in pairing["synthetic"]] == expected_refresh
+        assert refresh.step.tolist() == [item["step"] for item in pairing["synthetic"]]
         if method == "dp_sgd":
             assert not pairing["synthetic"] and summary["active_state_bytes"] == 0
         else:
@@ -216,9 +277,16 @@ def validate(c, runs, output, require_tests=True):
     if complete_records:
         epsilon_values = [record[2]["epsilon_spent"] for record in complete_records]
         assert all(math.isclose(value, epsilon_values[0], rel_tol=0.0, abs_tol=1e-12) for value in epsilon_values)
-    fisher_pairs = [records[run_id][3]["synthetic"] for run_id in expected_ids if records[run_id][0]["method"] == "dp_fisher_wiener"]
-    for pair in fisher_pairs[1:]:
-        _compare_pairing(fisher_pairs[0], pair, ("step", "samples_hash", "labels_hash", "rng_before", "rng_after"))
+    fisher_ids = [run_id for run_id in expected_ids if records[run_id][0]["method"] == "dp_fisher_wiener"]
+    fisher_base_id = fisher_ids[0]
+    fisher_base_pair = records[fisher_base_id][3]["synthetic"]
+    for run_id in fisher_ids[1:]:
+        pair = records[run_id][3]["synthetic"]
+        keys = ("step", "samples_hash", "labels_hash", "rng_before", "rng_after")
+        if records[fisher_base_id][2]["status"] == "completed" and records[run_id][2]["status"] == "completed":
+            _compare_pairing(fisher_base_pair, pair, keys)
+        else:
+            _compare_pairing_prefix(fisher_base_pair, pair, keys)
     # The preceding common pairing comparison intentionally ignores model
     # hashes across methods: filters make their trajectories differ.  Explicit
     # same-method LR pairing is the regression-sensitive comparison.

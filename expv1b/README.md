@@ -101,6 +101,15 @@ non-finite state as `status="diverged"`. They record the divergence step,
 completed steps, epsilon at divergence, and last finite diagnostics. A
 divergent run is not compared as a normal final-step utility result.
 
+Validation keeps completed Fisher runs strict: their synthetic pairing must be
+fully equal. A diverged Fisher run is compared only on its strictly equal
+common executed prefix; its own step schedule is still checked for missing or
+extra steps. Refresh occurs before consuming the private batch, so divergence
+at a refresh step legitimately retains that refresh artifact. The validator
+therefore includes refreshes through `diverged_step` when that step is a
+Fisher refresh, and requires `refresh_metrics.csv` steps to equal synthetic
+pairing steps exactly.
+
 ## Interpretation registered before the sweep
 
 - If a middle LR improves accuracy/AUC and approaches or exceeds DP-SGD, that
@@ -134,6 +143,11 @@ reference anchors are:
 DP-SGD lr=.10:           9e9c9e76e84680f6fcb1c34ded5047f73f36b54c8616fb14293a470270fce1b2
 DP-Fisher-Wiener lr=.10: c04595c804fe9f04bd3421385e6e75e920bc288e9920c486fa0929c009ed6aa7
 ```
+
+Only these two lr=.10 runs have fixed final-model hashes. The other Fisher
+learning rates have no predefined hash; formal validation requires a valid
+64-character hexadecimal hash and otherwise leaves their results free to be
+determined by the sweep.
 
 The full validator checks these hashes and, when the reference artifact is
 available, all comparable private pairing/model-hash trajectories and Fisher
