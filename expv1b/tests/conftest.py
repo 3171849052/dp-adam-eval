@@ -39,6 +39,9 @@ REQUIRED_NODEIDS = {
     "expv1b/tests/test_pairing.py::test_paired_rng",
     "expv1b/tests/test_lr_sweep.py::test_lr_only_optimizer",
     "expv1b/tests/test_pipeline.py::test_diagnostic_isolation",
+    "expv1b/tests/test_pipeline.py::test_nonfinite_diagnostics_do_not_stop_training",
+    "expv1b/tests/test_pipeline.py::test_nonfinite_diagnostics_preserve_trajectory",
+    "expv1b/tests/test_pipeline.py::test_nonfinite_filtered_gradient_still_diverges",
     "expv1b/tests/test_lr_sweep.py::test_effective_signal_lr",
     "expv1b/tests/test_regression.py::test_regression",
     "expv1b/tests/test_pipeline.py::test_pipeline",
@@ -47,6 +50,8 @@ REQUIRED_NODEIDS = {
     "expv1b/tests/test_validation_edges.py::test_diverged_fisher_synthetic_pairing_uses_common_prefix",
     "expv1b/tests/test_validation_edges.py::test_completed_fisher_synthetic_pairing_requires_full_length",
     "expv1b/tests/test_validation_edges.py::test_divergence_on_refresh_step_accepts_existing_refresh",
+    "expv1b/tests/test_validation_edges.py::test_divergence_between_refresh_steps",
+    "expv1b/tests/test_validation_edges.py::test_divergence_completed_steps_invariant",
     "expv1b/tests/test_validation_edges.py::test_completed_refresh_schedule",
 }
 PASSED = set()

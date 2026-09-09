@@ -6,6 +6,7 @@ from expv1b.validate_expv1b import (
     _compare_pairing,
     _compare_pairing_prefix,
     _validate_final_hash,
+    _validate_divergence_progress,
     expected_refresh_steps,
 )
 
@@ -78,6 +79,14 @@ def test_divergence_between_refresh_steps():
     assert 650 not in steps
 
 
+def test_divergence_completed_steps_invariant():
+    for completed in (600, 601):
+        _validate_divergence_progress(completed, 600, 1170)
+    for completed in (599, 602):
+        with pytest.raises(AssertionError):
+            _validate_divergence_progress(completed, 600, 1170)
+
+
 def test_completed_refresh_schedule():
     steps = expected_refresh_steps(
         method="dp_fisher_wiener", status="completed", completed_steps=1170,
@@ -88,4 +97,3 @@ def test_completed_refresh_schedule():
         method="dp_sgd", status="completed", completed_steps=1170,
         diverged_step=None, planned_steps=1170, K=50,
     ) == []
-

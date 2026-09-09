@@ -68,6 +68,94 @@ def _assert_finite_frame(frame, allowed_missing=()):
         assert values.map(math.isfinite).all(), (column, "non-finite value")
 
 
+def _assert_finite_columns(frame, columns, allowed_missing=()):
+    """Require finite algorithmic columns without constraining research metrics."""
+    for column in columns:
+        assert column in frame.columns, (column, "missing column")
+        missing = frame[column].isna()
+        assert column in allowed_missing or not missing.any(), (column, "unexpected missing values")
+        values = frame.loc[~missing, column]
+        assert values.map(lambda value: math.isfinite(float(value))).all(), (column, "non-finite value")
+
+
+TRAIN_CORE_COLUMNS = {
+    "seed", "step", "epoch", "train_loss", "learning_rate", "refresh_time",
+    "diagnostic_spectrum_time", "wiener_filter_time", "active_state_bytes", "clip_rate",
+    "test_loss", "test_accuracy",
+}
+TRAIN_DIAGNOSTIC_COLUMNS = {
+    "clean_clipped_norm", "actual_noise_norm", "noisy_gradient_norm",
+    "filtered_gradient_norm", "relmse_noisy", "relmse_filtered", "cosine_noisy",
+    "cosine_filtered", "signal_retention", "noise_retention", "snr_in", "snr_out",
+    "snr_gain_db", "mse_reduction", "signal_amplitude_retention", "effective_signal_lr",
+    "optimizer_update_norm", "clean_reference_update_norm", "update_to_clean_reference_ratio",
+}
+LAYER_CORE_COLUMNS = {"seed", "step", "learning_rate"}
+LAYER_DIAGNOSTIC_COLUMNS = {
+    "clean_clipped_norm", "actual_noise_norm", "noisy_gradient_norm",
+    "filtered_gradient_norm", "relmse_noisy", "relmse_filtered", "cosine_noisy",
+    "cosine_filtered", "signal_retention", "noise_retention", "snr_in", "snr_out",
+    "snr_gain_db", "mse_reduction", "kappa", "H_mean", "H_std", "H_min", "H_max",
+    "H_q10", "H_q25", "H_q50", "H_q75", "H_q90", "trace_A", "trace_G", "trace_F",
+    "lambdaF_mean", "lambdaF_median", "lambdaF_q10", "lambdaF_q90",
+    "signal_amplitude_retention", "effective_signal_lr", "optimizer_update_norm",
+    "clean_reference_update_norm", "update_to_clean_reference_ratio",
+}
+DP_SGD_UNSUPPORTED_LAYER_DIAGNOSTICS = {
+    "kappa", "trace_A", "trace_G", "trace_F", "lambdaF_mean", "lambdaF_median",
+    "lambdaF_q10", "lambdaF_q90",
+}
+
+
+def _bool_value(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    raise AssertionError((value, "diagnostics_finite must be boolean"))
+
+
+def _diagnostic_value_finite(value):
+    if pd.isna(value):
+        return False
+    return math.isfinite(float(value))
+
+
+def _validate_diagnostic_finiteness(train, layer, diagnostics_enabled, summary):
+    """Check diagnostic flags while keeping them outside algorithmic validation."""
+    assert "diagnostics_finite" in train.columns
+    flags = {}
+    for _, row in train.iterrows():
+        step = int(row["step"])
+        flag = _bool_value(row["diagnostics_finite"])
+        if diagnostics_enabled:
+            expected = all(
+                _diagnostic_value_finite(row[column]) for column in TRAIN_DIAGNOSTIC_COLUMNS
+            )
+            for _, layer_row in layer[layer.step == step].iterrows():
+                expected = expected and all(
+                    _diagnostic_value_finite(layer_row[column])
+                    for column in LAYER_DIAGNOSTIC_COLUMNS
+                    if not (column in DP_SGD_UNSUPPORTED_LAYER_DIAGNOSTICS and
+                            layer_row.get("method") == "dp_sgd")
+                )
+        else:
+            expected = True
+        assert flag == expected, (step, flag, expected)
+        flags[step] = flag
+
+    nonfinite_steps = [step for step in flags if not flags[step]]
+    assert summary["diagnostic_nonfinite_steps"] == nonfinite_steps
+    assert summary["diagnostic_nonfinite_count"] == len(nonfinite_steps)
+    assert summary["diagnostics_all_finite"] == (not nonfinite_steps)
+
+
+def _validate_divergence_progress(completed_steps, diverged_step, planned_steps):
+    assert diverged_step is not None
+    assert 0 <= diverged_step < planned_steps
+    assert completed_steps in (diverged_step, diverged_step + 1)
+
+
 def _compare_pairing(reference, actual, keys):
     assert len(reference) == len(actual)
     for ref, got in zip(reference, actual):
@@ -108,9 +196,7 @@ def expected_refresh_steps(*, method, status, completed_steps, diverged_step,
     if status == "completed":
         return list(range(0, planned_steps, K))
     assert status == "diverged"
-    assert diverged_step is not None
-    assert 0 <= diverged_step < planned_steps
-    assert completed_steps <= diverged_step + 1
+    _validate_divergence_progress(completed_steps, diverged_step, planned_steps)
     return list(range(0, diverged_step + 1, K))
 
 
@@ -190,24 +276,22 @@ def validate(c, runs, output, require_tests=True):
             assert completed_steps == planned and summary["parameters_finite"]
             _validate_final_hash(c, run_id, summary)
         else:
-            assert summary["diverged_step"] is not None
-            assert 0 <= summary["diverged_step"] < planned
-            assert completed_steps <= summary["diverged_step"] + 1
+            _validate_divergence_progress(completed_steps, summary["diverged_step"], planned)
 
         train = pd.read_csv(root / "train_metrics.csv")
         layer = pd.read_csv(root / "layer_metrics.csv")
         refresh = pd.read_csv(root / "refresh_metrics.csv")
         eigenbin = pd.read_csv(root / "eigenbin_metrics.csv")
-        _assert_finite_frame(train, {"test_loss", "test_accuracy"})
-        layer_missing = {"kappa"}
-        if method == "dp_sgd":
-            layer_missing |= {
-                "trace_A", "trace_G", "trace_F", "lambdaF_mean", "lambdaF_median",
-                "lambdaF_q10", "lambdaF_q90",
-            }
-        _assert_finite_frame(layer, layer_missing)
+        _assert_finite_columns(
+            train, TRAIN_CORE_COLUMNS,
+            {"test_loss", "test_accuracy", "clip_rate"},
+        )
+        _assert_finite_columns(layer, LAYER_CORE_COLUMNS)
         _assert_finite_frame(refresh)
         assert eigenbin.empty
+        _validate_diagnostic_finiteness(
+            train, layer, meta["diagnostics_enabled"], summary,
+        )
         if status == "completed":
             assert train.step.tolist() == list(range(planned))
             assert len(layer) == planned * 4

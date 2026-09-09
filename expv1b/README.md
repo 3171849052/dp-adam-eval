@@ -74,6 +74,15 @@ trace/kappa, H statistics, and eigenvalue summaries. Eigenmode analysis is
 disabled (`eigenmode_diagnostics=false`, `eigen_budget=0`) and
 `eigenbin_metrics.csv` is intentionally empty with a valid schema.
 
+Research diagnostics are post-hoc and never control training termination.
+Algorithmic divergence is limited to non-finite loss, non-finite noisy DP
+gradient, non-finite Fisher-Wiener filtered gradient, or non-finite model
+parameters after the optimizer update. Each training row records
+`diagnostics_finite`; the summary records `diagnostics_all_finite`,
+`diagnostic_nonfinite_count`, and `diagnostic_nonfinite_steps`. Therefore a
+completed run may have non-finite research diagnostics, and that condition is
+not algorithmic divergence.
+
 ExpV1b additionally records:
 
 ```
@@ -98,8 +107,11 @@ are post-hoc summaries; there is no early stopping or best-checkpoint restore.
 
 Runs that encounter non-finite loss, gradient, or update stop at the first
 non-finite state as `status="diverged"`. They record the divergence step,
-completed steps, epsilon at divergence, and last finite diagnostics. A
-divergent run is not compared as a normal final-step utility result.
+completed steps, epsilon at divergence, and last finite diagnostics. For a
+diverged run, `completed_steps` is exactly `diverged_step` when the attempted
+step fails before the optimizer update, or `diverged_step + 1` when the
+optimizer update occurs before parameters are found non-finite. A divergent
+run is not compared as a normal final-step utility result.
 
 Validation keeps completed Fisher runs strict: their synthetic pairing must be
 fully equal. A diverged Fisher run is compared only on its strictly equal

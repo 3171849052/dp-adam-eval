@@ -62,7 +62,7 @@ TRAIN_FIELDS = [
     "mse_reduction", "learning_rate", "signal_amplitude_retention",
     "effective_signal_lr", "optimizer_update_norm", "clean_reference_update_norm",
     "update_to_clean_reference_ratio", "refresh_time", "diagnostic_spectrum_time",
-    "wiener_filter_time", "active_state_bytes",
+    "wiener_filter_time", "active_state_bytes", "diagnostics_finite",
 ]
 LAYER_FIELDS = [
     "seed", "method", "config_fingerprint", "step", "layer", "clean_clipped_norm",
@@ -240,6 +240,9 @@ def _summary_from_rows(
     total_refresh = sum(float(row["refresh_time"]) for row in refreshes)
     total_spectrum = sum(float(row["diagnostic_spectrum_time"]) for row in refreshes)
     total_filter = sum(float(row.get("wiener_filter_time", 0.0)) for row in rows)
+    diagnostic_nonfinite_steps = [
+        int(row["step"]) for row in rows if row.get("diagnostics_finite") is False
+    ]
     epsilon_spent = float(accountant.get_epsilon(c["delta"]))
     complete = status == "completed"
     summary = dict(
@@ -265,6 +268,9 @@ def _summary_from_rows(
         mean_diagnostic_spectrum_time=total_spectrum / len(refreshes) if refreshes else 0.0,
         total_wiener_filter_time=total_filter,
         mean_wiener_filter_time=total_filter / max(step, 1),
+        diagnostics_all_finite=not diagnostic_nonfinite_steps,
+        diagnostic_nonfinite_count=len(diagnostic_nonfinite_steps),
+        diagnostic_nonfinite_steps=diagnostic_nonfinite_steps,
         active_state_bytes=state_bytes(active),
         peak_cuda_allocated_memory=(torch.cuda.max_memory_allocated(next(model.parameters()).device)
                                     if next(model.parameters()).device.type == "cuda" else 0),
@@ -408,10 +414,13 @@ def train(c, run_id, output, data_override=None, *, diagnostics=True, eigen_budg
                     active_state_bytes=state_bytes(active), test_loss=None, test_accuracy=None,
                 )
                 parameters_finite = _all_finite(model.parameters())
-                diagnostics_finite = _numeric_values_finite(row) and all(
-                    _numeric_values_finite(layer_row) for layer_row in layer_rows
+                diagnostics_finite = (
+                    True if not diagnostics else _numeric_values_finite(row) and all(
+                        _numeric_values_finite(layer_row) for layer_row in layer_rows
+                    )
                 )
-                if parameters_finite and diagnostics_finite and (
+                row["diagnostics_finite"] = diagnostics_finite
+                if parameters_finite and (
                     (step + 1) % c["eval_interval"] == 0 or step + 1 == total
                 ):
                     row.update(evaluate(model, test_loader, device))
@@ -426,7 +435,7 @@ def train(c, run_id, output, data_override=None, *, diagnostics=True, eigen_budg
                     **audit,
                 ))
                 step += 1
-                if not parameters_finite or not diagnostics_finite:
+                if not parameters_finite:
                     status, diverged_step = "diverged", step - 1
                     break
                 evaluations = [r for r in rows if r.get("test_accuracy") is not None]
