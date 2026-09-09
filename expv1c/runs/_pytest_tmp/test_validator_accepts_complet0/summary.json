@@ -1,0 +1,27 @@
+{
+  "experiment": "expv1c",
+  "seed": 42,
+  "single_seed_descriptive_only": true,
+  "no_significance_tests": true,
+  "learning_rates": [
+    0.8,
+    1.0,
+    1.2,
+    1.5
+  ],
+  "dp_sgd_anchor_learning_rate": 0.1,
+  "combined_history_available": false,
+  "highest_final_accuracy_lr": 1.0,
+  "highest_accuracy_auc_lr": 1.5,
+  "lowest_final_test_loss_lr": 0.8,
+  "highest_lr_completed": 1.5,
+  "number_diverged": 0,
+  "peak_bracketed": false,
+  "boundary_best": true,
+  "stability_boundary_observed": false,
+  "boundary_metric": "accuracy_auc",
+  "best_tested_lr_by_auc": 1.5,
+  "descriptive_candidate_lr": 1.5,
+  "candidate_final_accuracy": 0.15625,
+  "candidate_final_loss": 2.935955822467804
+}

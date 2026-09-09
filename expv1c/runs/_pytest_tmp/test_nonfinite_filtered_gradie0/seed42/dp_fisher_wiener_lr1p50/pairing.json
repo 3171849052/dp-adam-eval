@@ -1,0 +1,13 @@
+{
+  "private": [],
+  "synthetic": [
+    {
+      "step": 0,
+      "rng_before": "e4d4dfc191a90b6dfed6139b01caf3dcd28b59d3be22ac3a1d0212d32438d844",
+      "rng_after": "71d2fd93f90e66b8fb895b16ec0956995082e5c8dba4a58a30b01a6dc9044988",
+      "samples_hash": "bfbf6c61d32621327a700f6b91da7240c8a6b4e7db078cf486333215e461b3e3",
+      "labels_hash": "4c94275096950eb5c256f4b1bc5abc3044e0454a058b8309659425b3664eef57",
+      "count": 8
+    }
+  ]
+}

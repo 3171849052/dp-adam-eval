@@ -1,0 +1,1 @@
+seed,method,config_fingerprint,step,layer,bin,count,lambda_min,lambda_max,lambda_mean,log10_lambda_mean,signal_power,noise_power,empirical_snr,H_mean,mse_before,mse_after,mse_reduction,signal_retention,noise_retention

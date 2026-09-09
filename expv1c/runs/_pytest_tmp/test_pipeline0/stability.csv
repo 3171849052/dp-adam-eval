@@ -1,0 +1,1 @@
+run_id,learning_rate,status,diverged_step,completed_steps,epsilon_spent_at_divergence,last_finite_accuracy,last_finite_loss

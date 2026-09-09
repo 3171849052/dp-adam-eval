@@ -1,0 +1,22 @@
+"""Explicit evidence obligations shared by pytest and artifact validation."""
+REQUIRED_NODEIDS = {
+    "expv1c/tests/test_lr_sweep.py::test_lr_grid_exact",
+    "expv1c/tests/test_pairing.py::test_paired_rng",
+    "expv1c/tests/test_lr_sweep.py::test_lr_only_optimizer",
+    "expv1c/tests/test_diagnostic_isolation.py::test_diagnostic_isolation",
+    "expv1c/tests/test_diagnostic_isolation.py::test_nonfinite_diagnostics_do_not_stop_training",
+    "expv1c/tests/test_diagnostic_isolation.py::test_nonfinite_diagnostics_preserve_trajectory",
+    "expv1c/tests/test_diagnostic_isolation.py::test_nonfinite_filtered_gradient_still_diverges",
+    "expv1c/tests/test_lr_sweep.py::test_effective_signal_lr",
+    "expv1c/tests/test_regression.py::test_regression",
+    "expv1c/tests/test_pipeline.py::test_pipeline",
+    "expv1c/tests/test_validation.py::test_formal_nonanchor_hash_is_not_fixed",
+    "expv1c/tests/test_validation.py::test_formal_nonanchor_wrongly_none_regression",
+    "expv1c/tests/test_validation.py::test_diverged_fisher_synthetic_pairing_uses_common_prefix",
+    "expv1c/tests/test_validation.py::test_completed_fisher_synthetic_pairing_requires_full_length",
+    "expv1c/tests/test_validation.py::test_divergence_on_refresh_step_accepts_existing_refresh",
+    "expv1c/tests/test_validation.py::test_divergence_between_refresh_steps",
+    "expv1c/tests/test_validation.py::test_divergence_completed_steps_invariant",
+    "expv1c/tests/test_validation.py::test_completed_refresh_schedule",
+    "expv1c/tests/test_validation.py::test_validator_accepts_completed_run_with_nonfinite_research_diagnostic",
+}
