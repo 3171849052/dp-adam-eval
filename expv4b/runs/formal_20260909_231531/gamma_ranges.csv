@@ -1,0 +1,11 @@
+seed,run_id,gamma_min,gamma_max_observed,status,divergence_stage
+123,dp_fisher_wiener_beta1_gamma_lr0p50,1.0061630403785682,3.0922205570830834,completed,
+123,dp_fisher_wiener_adaptive_beta_gamma_lr0p50,1.0450627404891988,56.01378303056831,completed,
+456,dp_fisher_wiener_beta1_gamma_lr0p50,1.0077132869451808,3.092604115470791,completed,
+456,dp_fisher_wiener_adaptive_beta_gamma_lr0p50,1.0446333097093687,101.15522167383276,completed,
+789,dp_fisher_wiener_beta1_gamma_lr0p50,1.0051770739142272,3.0907818126225144,completed,
+789,dp_fisher_wiener_adaptive_beta_gamma_lr0p50,1.0343978028021727,3015.2479523123634,completed,
+1024,dp_fisher_wiener_beta1_gamma_lr0p50,1.004242758249787,3.0934353470344136,completed,
+1024,dp_fisher_wiener_adaptive_beta_gamma_lr0p50,1.0248060860352235,190.7016136452297,completed,
+2027,dp_fisher_wiener_beta1_gamma_lr0p50,1.0067839474533469,3.0925838755239456,completed,
+2027,dp_fisher_wiener_adaptive_beta_gamma_lr0p50,1.0380390074621413,92.15637212566136,completed,
