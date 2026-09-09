@@ -1,0 +1,51 @@
+{
+  "passed": true,
+  "runs": [
+    {
+      "seed": 42,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr0p50",
+      "passed": true
+    },
+    {
+      "seed": 42,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr1p00",
+      "passed": true
+    },
+    {
+      "seed": 42,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr5p00",
+      "passed": true
+    },
+    {
+      "seed": 7,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr0p50",
+      "passed": true
+    },
+    {
+      "seed": 7,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr1p00",
+      "passed": true
+    },
+    {
+      "seed": 7,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr5p00",
+      "passed": true
+    },
+    {
+      "seed": 91,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr0p50",
+      "passed": true
+    },
+    {
+      "seed": 91,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr1p00",
+      "passed": true
+    },
+    {
+      "seed": 91,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr5p00",
+      "passed": true
+    }
+  ],
+  "certificate_tolerance": 1e-08
+}
