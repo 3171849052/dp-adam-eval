@@ -174,10 +174,15 @@ def _validate_beta_steps(config, frame, seed, run_id, completed,
                             float(row.clean_signal_energy) / float(row.trace_F),
                             "beta_oracle_step")
         assert _bool(row.beta_dp_step_negative) is (expected_raw < 0)
-        expected_valid = all(_finite(row[field]) for field in (
-            "clean_signal_energy", "noisy_gradient_energy", "expected_noise_energy",
-            "noise_debiased_energy_raw", "beta_oracle_step", "beta_dp_step_raw",
-            "beta_dp_step_positive"))
+        deployable_fields = (
+            "noisy_gradient_energy", "expected_noise_energy",
+            "noise_debiased_energy_raw", "beta_dp_step_raw",
+            "beta_dp_step_positive",
+        )
+        oracle_fields = ("clean_signal_energy", "beta_oracle_step")
+        expected_valid = all(_finite(row[field]) for field in deployable_fields)
+        if oracle_enabled:
+            expected_valid = expected_valid and all(_finite(row[field]) for field in oracle_fields)
         assert _bool(row.diagnostic_valid) is expected_valid
         refresh_index = int(row.step) // int(config["K"])
         assert int(row.refresh_index) == refresh_index
@@ -351,7 +356,8 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
     required_files = ("config.json", "metadata.json", "summary.json", "pairing.json",
                       "train_metrics.csv", "layer_metrics.csv", "refresh_metrics.csv",
                       "beta_step_metrics.csv", "beta_interval_metrics.csv",
-                      "beta_controller_metrics.csv", "eigenbin_metrics.csv", "h_certificates.json")
+                      "beta_controller_metrics.csv", "failed_step_metrics.csv",
+                      "eigenbin_metrics.csv", "h_certificates.json")
     assert all((root / name).exists() for name in required_files)
     cfg, meta, summary, pairing = [load(root / name) for name in ("config.json", "metadata.json", "summary.json", "pairing.json")]
     assert cfg == config and meta["provenance"] == current_provenance
@@ -369,6 +375,12 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
     assert meta["oracle_path_separate_from_controller"] is True
     assert summary["deployable_beta_path_reads_clean_gradient"] is False
     assert summary["oracle_path_separate_from_controller"] is True
+    assert meta["accounted_dp_mechanisms_valid"] == summary["accounted_dp_mechanisms_valid"] is True
+    expected_complete = summary["status"] == "completed" or summary.get("divergence_stage") in {
+        "noisy_gradient", "filtered_gradient", "optimizer_exception", "parameters"
+    }
+    assert meta["end_to_end_dp_accounting_complete"] == summary["end_to_end_dp_accounting_complete"]
+    assert summary["end_to_end_dp_accounting_complete"] is expected_complete
     oracle_enabled = bool(meta.get("oracle_diagnostics_enabled", True))
     beta_measurement_enabled = bool(meta.get("beta_measurement_enabled", True))
     assert meta["contains_non_dp_oracle"] is oracle_enabled
@@ -419,19 +431,45 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
         assert summary["final_model_hash"] == pairing["private"][-1]["model_hash"]
     frames = {name: pd.read_csv(root / f"{name}.csv") for name in (
         "train_metrics", "layer_metrics", "refresh_metrics", "beta_step_metrics",
-        "beta_interval_metrics", "beta_controller_metrics", "eigenbin_metrics")}
-    train, layer, refresh, beta_step, interval, controller, eigenbin = [frames[name] for name in frames]
+        "beta_interval_metrics", "beta_controller_metrics", "failed_step_metrics",
+        "eigenbin_metrics")}
+    train, layer, refresh, beta_step, interval, controller, failed, eigenbin = [frames[name] for name in frames]
     assert train.step.tolist() == list(range(completed))
-    assert len(layer) == completed * len(LAYERS)
+    expected_layer_rows = completed * len(LAYERS) if oracle_enabled else 0
+    assert len(layer) == expected_layer_rows
     assert eigenbin.empty
     _validate_beta_steps(config, beta_step, seed, spec["run_id"], observations,
                          method=spec["method"], controller=controller,
                          oracle_enabled=oracle_enabled,
                          measurement_enabled=beta_measurement_enabled)
-    if oracle_enabled and beta_measurement_enabled:
+    if beta_measurement_enabled:
         _validate_intervals(config, beta_step, interval, spec["method"], train)
     else:
         assert interval.empty
+    expected_failed_rows = 0 if status == "completed" or stage == "loss" else 1
+    assert len(failed) == expected_failed_rows
+    if expected_failed_rows:
+        failed_row = failed.iloc[0]
+        assert int(failed_row.step) == int(summary["diverged_step"])
+        assert str(failed_row.divergence_stage) == str(stage)
+        assert int(failed_row.seed) == seed and str(failed_row.run_id) == spec["run_id"]
+        assert str(failed_row.method) == spec["method"]
+        assert float(failed_row.learning_rate) == float(spec["learning_rate"])
+    _assert_finite_columns(failed, [
+        "step", "beta_observation_time", "beta_controller_time",
+        "oracle_diagnostic_time", "reconstruction_diagnostic_time", "wiener_filter_time",
+    ])
+    if not failed.empty:
+        assert (failed[[
+            "beta_observation_time", "beta_controller_time", "oracle_diagnostic_time",
+            "reconstruction_diagnostic_time", "wiener_filter_time",
+        ]] >= 0).all().all()
+        assert failed.dp_mechanism_executed.map(_bool).all()
+        expected_observation_recorded = (
+            beta_measurement_enabled
+            and stage in ("filtered_gradient", "optimizer_exception", "parameters")
+        )
+        assert failed.beta_observation_recorded.map(_bool).eq(expected_observation_recorded).all()
     assert beta_step.dp_observation_recorded.map(_bool).all()
     assert beta_step.optimizer_step_completed.map(_bool).tolist() == [int(value) < completed for value in beta_step.step]
     invalid_steps = sorted(set(int(row.step) for _, row in beta_step.iterrows() if not _bool(row.diagnostic_valid)))
@@ -486,17 +524,19 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
     assert refresh.measurement_only.map(_bool).eq(spec["method"] == DP_METHOD).all()
     assert math.isclose(summary["total_refresh_time"], refresh.refresh_time.sum(), rel_tol=1e-6, abs_tol=1e-10)
     assert math.isclose(summary["total_measurement_only_refresh_time"], refresh.loc[refresh.measurement_only, "refresh_time"].sum(), rel_tol=1e-6, abs_tol=1e-10)
-    controller_time = refresh.beta_controller_time.sum() + train.beta_controller_time.sum()
+    controller_time = (refresh.beta_controller_time.sum() + train.beta_controller_time.sum()
+                       + failed.beta_controller_time.sum())
     assert math.isclose(summary["total_beta_controller_time"], controller_time, rel_tol=1e-6, abs_tol=1e-10)
-    filter_time = train.wiener_filter_time.sum()
+    filter_time = train.wiener_filter_time.sum() + failed.wiener_filter_time.sum()
     spectrum_time = refresh.diagnostic_spectrum_time.sum()
     assert math.isclose(summary["total_wiener_filter_time"], filter_time,
                         rel_tol=1e-6, abs_tol=1e-10)
     assert math.isclose(summary["total_diagnostic_spectrum_time"], spectrum_time,
                         rel_tol=1e-6, abs_tol=1e-10)
-    beta_observation_time = train.beta_observation_time.sum()
-    oracle_time = train.oracle_diagnostic_time.sum()
-    reconstruction_time = train.reconstruction_diagnostic_time.sum()
+    beta_observation_time = train.beta_observation_time.sum() + failed.beta_observation_time.sum()
+    oracle_time = train.oracle_diagnostic_time.sum() + failed.oracle_diagnostic_time.sum()
+    reconstruction_time = (train.reconstruction_diagnostic_time.sum()
+                           + failed.reconstruction_diagnostic_time.sum())
     assert math.isclose(summary["total_beta_observation_time"], beta_observation_time,
                         rel_tol=1e-6, abs_tol=1e-10)
     assert math.isclose(summary["total_oracle_diagnostic_time"], oracle_time,

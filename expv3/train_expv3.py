@@ -121,15 +121,49 @@ BETA_CONTROLLER_FIELDS = [
     "H_beta1_hash", "H_beta1_hash_copy", "H_stats_digest", "H_beta1_stats_digest",
     "beta_algorithm_active",
 ]
+FAILED_STEP_FIELDS = [
+    "seed", "run_id", "method", "learning_rate", "step", "divergence_stage",
+    "beta_observation_time", "beta_controller_time", "oracle_diagnostic_time",
+    "reconstruction_diagnostic_time", "wiener_filter_time",
+]
+FAILED_STEP_OPTIONAL_FIELDS = ["dp_mechanism_executed", "beta_observation_recorded"]
+
+
+def _partial_timing_snapshot(beta_observation_seconds=0.0, controller_seconds=0.0,
+                             oracle_seconds=0.0, reconstruction_seconds=0.0,
+                             filter_time=0.0):
+    """Return a finite, non-negative timing snapshot safe to persist on failure."""
+    values = {
+        "beta_observation_time": beta_observation_seconds,
+        "beta_controller_time": controller_seconds,
+        "oracle_diagnostic_time": oracle_seconds,
+        "reconstruction_diagnostic_time": reconstruction_seconds,
+        "wiener_filter_time": filter_time,
+    }
+    result = {}
+    for name, value in values.items():
+        value = float(value)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(f"invalid partial timing for {name}")
+        result[name] = value
+    return result
 
 
 class DivergenceError(FloatingPointError):
     """An algorithmic non-finite state; research diagnostics do not raise it."""
 
-    def __init__(self, step, stage):
+    def __init__(self, step, stage, partial_timing=None):
         super().__init__(f"non-finite {stage} at step {step}")
         self.step = step
         self.stage = stage
+        partial_timing = partial_timing or {}
+        self.partial_timing = _partial_timing_snapshot(
+            partial_timing.get("beta_observation_time", 0.0),
+            partial_timing.get("beta_controller_time", 0.0),
+            partial_timing.get("oracle_diagnostic_time", 0.0),
+            partial_timing.get("reconstruction_diagnostic_time", 0.0),
+            partial_timing.get("wiener_filter_time", 0.0),
+        )
 
 
 def sync(model):
@@ -265,6 +299,7 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
     oracle_seconds = 0.0
     beta_observation_seconds = 0.0
     controller_seconds = 0.0
+    filter_time = 0.0
     diagnostics_ok = True
     clip_rate = None
     if diagnostics:
@@ -287,7 +322,10 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
     if on_dp_mechanism_executed is not None:
         on_dp_mechanism_executed(dict(audit))
     if not all_finite(p.grad for p in model.parameters()):
-        raise DivergenceError(step, "noisy_gradient")
+        raise DivergenceError(
+            step, "noisy_gradient",
+            _partial_timing_snapshot(reconstruction_seconds=reconstruction_seconds),
+        )
 
     noisy_for_diagnostics = None
     deployable_rows = []
@@ -343,7 +381,17 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
         }))
         merged.update(oracle_diagnostic_error=oracle_error, dp_observation_recorded=True,
                       optimizer_step_completed=False)
-        merged["diagnostic_valid"] = beta_estimation.beta_step_diagnostic_is_finite(merged)
+        if oracle_diagnostics:
+            merged["diagnostic_valid"] = beta_estimation.beta_step_diagnostic_is_finite(merged)
+        else:
+            merged["diagnostic_valid"] = all(
+                value_finite(merged.get(field)) and merged.get(field) is not None
+                for field in (
+                    "noisy_gradient_energy", "expected_noise_energy",
+                    "noise_debiased_energy_raw", "beta_dp_step_raw",
+                    "beta_dp_step_positive",
+                )
+            )
         beta_rows.append(merged)
 
     if on_beta_observation is not None:
@@ -358,14 +406,41 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
     sync(model)
     filter_time = time.perf_counter() - started if method == FISHER_METHOD else 0.0
     if not all_finite(p.grad for p in model.parameters()):
-        raise DivergenceError(step, "filtered_gradient")
+        raise DivergenceError(
+            step, "filtered_gradient",
+            _partial_timing_snapshot(
+                beta_observation_seconds=beta_observation_seconds,
+                controller_seconds=controller_seconds,
+                oracle_seconds=oracle_seconds,
+                reconstruction_seconds=reconstruction_seconds,
+                filter_time=filter_time,
+            ),
+        )
 
     try:
         optimizer.step()
     except Exception as exc:
-        raise DivergenceError(step, "optimizer_exception") from exc
+        raise DivergenceError(
+            step, "optimizer_exception",
+            _partial_timing_snapshot(
+                beta_observation_seconds=beta_observation_seconds,
+                controller_seconds=controller_seconds,
+                oracle_seconds=oracle_seconds,
+                reconstruction_seconds=reconstruction_seconds,
+                filter_time=filter_time,
+            ),
+        ) from exc
     if not all_finite(model.parameters()):
-        raise DivergenceError(step, "parameters")
+        raise DivergenceError(
+            step, "parameters",
+            _partial_timing_snapshot(
+                beta_observation_seconds=beta_observation_seconds,
+                controller_seconds=controller_seconds,
+                oracle_seconds=oracle_seconds,
+                reconstruction_seconds=reconstruction_seconds,
+                filter_time=filter_time,
+            ),
+        )
     for row in beta_rows:
         row["optimizer_step_completed"] = True
     rows, layer_rows = {}, []
@@ -417,7 +492,7 @@ class Indexed(Dataset):
 
 def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall,
              diagnostic_seconds, controller_seconds, active, status, diverged_step,
-             oracle_diagnostics=True, beta_measurement=True):
+             oracle_diagnostics=True, beta_measurement=True, failed_step_rows=None):
     evaluations = [row for row in rows if row.get("test_accuracy") is not None]
     finite_evaluations = [row for row in evaluations if value_finite(row.get("test_accuracy"))]
     accuracies = [float(row["test_accuracy"]) for row in finite_evaluations]
@@ -433,15 +508,34 @@ def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall
     else:
         auc, late, prefix_auc = None, [], None
     complete = status == "completed"
+    failed_step_rows = failed_step_rows or []
     total_refresh = sum(float(row["refresh_time"]) for row in refreshes)
     measurement_refresh = sum(float(row["refresh_time"]) for row in refreshes if row["measurement_only"])
     spectrum = sum(float(row["diagnostic_spectrum_time"]) for row in refreshes)
-    beta_observation = sum(float(row.get("beta_observation_time", 0.0)) for row in rows)
-    oracle_diagnostic = sum(float(row.get("oracle_diagnostic_time", 0.0)) for row in rows)
-    reconstruction_diagnostic = sum(float(row.get("reconstruction_diagnostic_time", 0.0)) for row in rows)
-    filter_time = sum(float(row.get("wiener_filter_time", 0.0)) for row in rows)
+    # Runtime totals are derived from the artifacts that will be written.  A
+    # failed post-DP step is not a train row, but its partial diagnostics still
+    # belong in the corresponding failed-step artifact and in these totals.
+    successful_beta_observation = sum(float(row.get("beta_observation_time", 0.0)) for row in rows)
+    failed_beta_observation = sum(float(row.get("beta_observation_time", 0.0))
+                                  for row in failed_step_rows)
+    beta_observation = successful_beta_observation + failed_beta_observation
+    successful_oracle_diagnostic = sum(float(row.get("oracle_diagnostic_time", 0.0)) for row in rows)
+    failed_oracle_diagnostic = sum(float(row.get("oracle_diagnostic_time", 0.0))
+                                   for row in failed_step_rows)
+    oracle_diagnostic = successful_oracle_diagnostic + failed_oracle_diagnostic
+    successful_reconstruction = sum(float(row.get("reconstruction_diagnostic_time", 0.0))
+                                    for row in rows)
+    failed_reconstruction = sum(float(row.get("reconstruction_diagnostic_time", 0.0))
+                                for row in failed_step_rows)
+    reconstruction_diagnostic = successful_reconstruction + failed_reconstruction
+    successful_filter = sum(float(row.get("wiener_filter_time", 0.0)) for row in rows)
+    failed_filter = sum(float(row.get("wiener_filter_time", 0.0)) for row in failed_step_rows)
+    filter_time = successful_filter + failed_filter
     total_controller_time = sum(float(row.get("beta_controller_time", 0.0)) for row in rows)
+    total_controller_time += sum(float(row.get("beta_controller_time", 0.0))
+                                 for row in failed_step_rows)
     total_controller_time += sum(float(row.get("beta_controller_time", 0.0)) for row in refreshes)
+    diagnostic_seconds = oracle_diagnostic + reconstruction_diagnostic + spectrum
     if spec["method"] == FISHER_METHOD:
         research_overhead = oracle_diagnostic + reconstruction_diagnostic + spectrum
     else:
@@ -598,7 +692,8 @@ def _enrich_intervals(intervals, method, refresh_rows, controller_rows, successf
 
 
 def _write_artifacts(root, config, spec, rows, layers, refreshes, beta_steps,
-                     beta_intervals, controller_rows, pairing, h_certificates):
+                     beta_intervals, controller_rows, failed_step_rows, pairing,
+                     h_certificates):
     fp = fingerprint(config)
     prefix = {"seed": spec["seed"], "run_id": spec["run_id"], "method": spec["method"],
               "learning_rate": spec["learning_rate"], "config_fingerprint": fp}
@@ -608,6 +703,8 @@ def _write_artifacts(root, config, spec, rows, layers, refreshes, beta_steps,
     write_csv(root / "beta_step_metrics.csv", [dict(prefix, **row) for row in beta_steps], BETA_STEP_FIELDS)
     write_csv(root / "beta_interval_metrics.csv", beta_intervals, BETA_INTERVAL_FIELDS)
     write_csv(root / "beta_controller_metrics.csv", controller_rows, BETA_CONTROLLER_FIELDS)
+    write_csv(root / "failed_step_metrics.csv", failed_step_rows,
+              [*FAILED_STEP_FIELDS, *FAILED_STEP_OPTIONAL_FIELDS])
     write_csv(root / "eigenbin_metrics.csv", [], ["seed", "step", "layer", "bin"])
     save_json(root / "pairing.json", pairing)
     save_json(root / "h_certificates.json", h_certificates)
@@ -688,6 +785,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     save_json(root / "metadata.json", metadata)
 
     rows, layer_rows, beta_steps, refreshes = [], [], [], []
+    failed_step_rows = []
     controller_rows, h_certificates = [], []
     audits, synthetic_audits, privacy_audits = [], [], []
     privacy_steps = 0
@@ -827,6 +925,16 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                     )
                 except DivergenceError as exc:
                     status, diverged_step, divergence_stage = "diverged", exc.step, exc.stage
+                    if exc.stage != "loss":
+                        failed_step_rows.append({
+                            "seed": seed, "run_id": run_name, "method": spec["method"],
+                            "learning_rate": spec["learning_rate"], "step": exc.step,
+                            "divergence_stage": exc.stage, **exc.partial_timing,
+                            "dp_mechanism_executed": True,
+                            "beta_observation_recorded": any(
+                                int(row["step"]) == int(exc.step) for row in beta_steps
+                            ),
+                        })
                     break
                 diagnostic_seconds += elapsed
                 controller_seconds_total += controller_elapsed + refresh_controller_time
@@ -859,6 +967,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         config, spec, model, rows, refreshes, accountant, sigma, step, wall,
         diagnostic_seconds, controller_seconds_total, active, status, diverged_step,
         oracle_diagnostics=oracle_diagnostics, beta_measurement=beta_measurement,
+        failed_step_rows=failed_step_rows,
     )
     summary.update(
         planned_privacy_steps=total, privacy_steps=privacy_steps,
@@ -876,18 +985,27 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         beta_diagnostic_nonfinite_steps=sorted({row["step"] for row in beta_steps
                                                if not row["diagnostic_valid"]}),
     )
+    end_to_end_dp_accounting_complete = (
+        status == "completed" or divergence_stage in {
+            "noisy_gradient", "filtered_gradient", "optimizer_exception", "parameters"
+        }
+    )
+    summary.update(
+        accounted_dp_mechanisms_valid=True,
+        end_to_end_dp_accounting_complete=end_to_end_dp_accounting_complete,
+    )
     metadata.update(summary, complete=status == "completed")
     save_json(root / "summary.json", summary)
     save_json(root / "metadata.json", metadata)
     interval_rows = (build_interval_rows(beta_steps, config["beta_window"])
-                     if beta_steps and oracle_diagnostics else [])
+                     if beta_steps else [])
     interval_rows = _enrich_intervals(
         interval_rows, spec["method"], refreshes, controller_rows, rows, config["K"]
     )
     try:
         _write_artifacts(
             root, config, spec, rows, layer_rows, refreshes, beta_steps,
-            interval_rows, controller_rows,
+            interval_rows, controller_rows, failed_step_rows,
             {"private": audits, "privacy": privacy_audits, "synthetic": synthetic_audits}, h_certificates,
         )
     finally:

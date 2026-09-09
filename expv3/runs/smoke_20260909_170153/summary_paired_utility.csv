@@ -1,0 +1,7 @@
+comparison,seed,metric,adaptive_status,dp_sgd_status,pair_valid,adaptive,dp_sgd,delta,mean,sd,n_total_pairs,n_valid_pairs
+adaptive_lr0p50_minus_dp_sgd_lr0p50,42,final_accuracy,completed,completed,True,0.0,0.1875,-0.1875,,,,
+adaptive_lr0p50_minus_dp_sgd_lr0p50,42,accuracy_auc,completed,completed,True,0.07291666666666667,0.078125,-0.005208333333333329,,,,
+adaptive_lr0p50_minus_dp_sgd_lr0p50,42,late_mean_accuracy,completed,completed,True,0.0,0.125,-0.125,,,,
+adaptive_lr0p50_minus_dp_sgd_lr0p50,aggregate,final_accuracy,aggregate,aggregate,,,,,-0.1875,,1,1
+adaptive_lr0p50_minus_dp_sgd_lr0p50,aggregate,accuracy_auc,aggregate,aggregate,,,,,-0.005208333333333329,,1,1
+adaptive_lr0p50_minus_dp_sgd_lr0p50,aggregate,late_mean_accuracy,aggregate,aggregate,,,,,-0.125,,1,1

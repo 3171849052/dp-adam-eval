@@ -57,6 +57,8 @@ remain recorded. `divergence_stage` is null for completion, or one of `loss`,
 | Nonfinite filtered gradient | Yes | Yes | No |
 | Optimizer exception / nonfinite parameters | Yes | Yes | No |
 
+“Loss before DP -> No extra privacy query”. This only means that no additional Gaussian mechanism was consumed. Because the abort decision depends on the current pre-DP private loss, the accountant does not cover that observable stopping event. Therefore a loss-stage-diverged artifact retains the epsilon for mechanisms executed before the abort, but does not claim complete end-to-end DP accounting. Post-DP divergence and completed runs have complete end-to-end accounting when their privacy steps, epsilon, and pairing validate. This is separate from `release_safe_under_dp=false`, which remains false because the full research artifact contains a non-DP oracle.
+
 `pairing.private` records successful finite training steps; `pairing.privacy`
 records all executed DP mechanisms, including final post-noise failures;
 `beta_step_metrics` records all successfully formed deployable observations.
@@ -84,3 +86,25 @@ Raw beta median and negative rate use finite `beta_dp_raw` values from all
 observed interval rows, including final and partial intervals. Empty finite
 sets report null, including DP-SGD without measurements. Fallback and accepted
 rates still use controller decision rows with `interval_index > 0`.
+
+`failed_step_metrics.csv` is the authoritative record for partial runtime from
+one failed post-DP step; it never adds a fake row to `train_metrics.csv`, whose
+rows remain successful finite optimizer updates only. Loss-stage aborts occur
+before `private_update` and therefore have no failed private timing row.
+
+Multi-seed accuracy and test-loss curves are aggregated by step across seeds;
+seed trajectories are never concatenated into one line. The `beta_train` curve
+uses the median across seeds at each interval. `beta_raw/oracle` is the
+contemporaneous `beta_dp_raw / beta_oracle` diagnostic, while
+`beta_train/oracle` is the actual `beta_train` used in interval `m` divided by
+the oracle beta from that same interval `m`.
+
+`H_q50_adaptive_vs_beta1` uses the same-refresh Fisher spectrum to compare the
+actual adaptive-beta `H_q50` with the beta=1 counterfactual `H_beta1_q50`, as
+recorded in `beta_controller_metrics.csv`.
+
+Mechanism and layer summary rows carry `seed`, `run_id`, `status`,
+`completed_steps`, and `metric_scope` (`full` or `prefix`). Learning-rate full
+utility aggregates use completed runs only and report `n_runs`, `n_completed`,
+and `n_diverged`; paired matched-LR utility reports `n_total_pairs` and
+`n_valid_pairs`.

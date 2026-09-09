@@ -87,6 +87,20 @@ REQUIRED_NODEIDS.update({
     'expv3/tests/test_hardening.py::test_oracle_exception_does_not_change_training',
     'expv3/tests/test_hardening.py::test_raw_beta_statistics_use_interval_rows',
 })
+REQUIRED_NODEIDS.update({
+    'expv3/tests/test_final_hardening.py::test_validator_rejects_loss_divergence_full_dp_claim',
+    'expv3/tests/test_final_hardening.py::test_filtered_divergence_runtime_includes_failed_step',
+    'expv3/tests/test_final_hardening.py::test_loss_divergence_has_no_failed_private_timing_row',
+    'expv3/tests/test_final_hardening.py::test_oracle_disabled_preserves_deployable_interval_artifact',
+    'expv3/tests/test_final_hardening.py::test_aggregate_step_metric_does_not_connect_seeds',
+    'expv3/tests/test_final_hardening.py::test_formal_multiseed_plot_uses_unique_step_grid',
+    'expv3/tests/test_final_hardening.py::test_beta_train_aggregate_uses_same_interval_across_seeds',
+    'expv3/tests/test_final_hardening.py::test_beta_train_oracle_ratio_uses_current_interval_oracle',
+    'expv3/tests/test_final_hardening.py::test_h_adaptive_vs_beta1_uses_counterfactual_field',
+    'expv3/tests/test_final_hardening.py::test_summary_rows_include_seed_and_status',
+    'expv3/tests/test_final_hardening.py::test_lr_summary_reports_completed_denominator',
+    'expv3/tests/test_final_hardening.py::test_paired_summary_reports_valid_pair_count',
+})
 PASSED = set()
 
 
