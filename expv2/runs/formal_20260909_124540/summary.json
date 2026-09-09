@@ -1,0 +1,36 @@
+{
+  "experiment": "expv2",
+  "beta_train": 1.0,
+  "primary_window": 50,
+  "window_sensitivity": [
+    10,
+    25,
+    50,
+    100
+  ],
+  "no_success_thresholds": true,
+  "beta_is_second_moment_scale": true,
+  "beta_not_paper_alpha": true,
+  "contains_non_dp_oracle": true,
+  "release_safe_under_dp": false,
+  "deployable_beta_estimator_is_postprocessing": true,
+  "oracle_is_research_only": true,
+  "interpretation_cases": {
+    "A": "contemporaneous and lagged DP beta both reliable supports ExpV2b",
+    "B": "contemporaneous good but lagged poor indicates dynamics faster than the lag",
+    "C": "larger windows improving error indicates estimator sample-size noise",
+    "D": "negative deep-layer estimates indicate DP noise-energy dominance",
+    "E": "rapid oracle beta changes indicate an unstable online scalar model",
+    "F": "beta far below one means calibrated Wiener would shrink more aggressively"
+  },
+  "utility_is_regression_only": true,
+  "runs": [
+    "seed42/dp_sgd_lr0p10",
+    "seed42/dp_fisher_wiener_lr0p10",
+    "seed42/dp_fisher_wiener_lr0p80",
+    "seed7/dp_sgd_lr0p10",
+    "seed7/dp_fisher_wiener_lr0p10",
+    "seed91/dp_sgd_lr0p10",
+    "seed91/dp_fisher_wiener_lr0p10"
+  ]
+}

@@ -84,51 +84,22 @@ def _value(value: object) -> str:
     return _format_name_component(value)
 
 
-def _optional_value(value: int | None) -> str:
-    return "all" if value is None else _value(value)
-
-
 def format_run_name(config, timestamp: datetime | None = None) -> str:
-    """Encode every effective scalar experiment setting in a stable name."""
+    """Encode the requested core experiment settings in a compact name."""
     stamp = timestamp or datetime.now()
     c = config
-    sampling_name = (
-        "pois"
-        if c.privacy.sampling == "poisson"
-        else _format_name_component(c.privacy.sampling)
-    )
     tokens = [
-        f"{stamp:%Y%m%d-%H%M%S}",
+        f"{stamp:%m%d-%H%M%S}",
         _format_name_component(c.model.name),
-        _format_name_component(c.data.dataset),
         _format_name_component(c.algorithm),
         f"s{_value(c.seed)}",
         f"ep{_value(c.training.epochs)}",
-        f"b{_value(c.data.batch_size)}",
-        f"eb{_value(c.data.eval_batch_size)}",
         f"lr{_value(c.training.learning_rate)}",
-        f"opt{_format_name_component(c.training.optimizer)}",
-        f"mom{_value(c.training.momentum)}",
-        f"wd{_value(c.training.weight_decay)}",
         f"eps{_value(c.privacy.epsilon)}",
         f"d{_value(c.privacy.delta)}",
-        f"C{_value(c.privacy.max_grad_norm)}",
-        f"acc{_format_name_component(c.privacy.accountant)}",
-        f"samp{sampling_name}",
-        f"acct{_format_name_component(c.privacy.accounting_convention)}",
-        f"pois{_value(c.privacy.poisson_sampling)}",
         f"beta{_value(c.wiener.beta)}",
         f"K{_value(c.wiener.refresh_interval)}",
         f"M{_value(c.wiener.synthetic_samples)}",
-        f"ridge{_value(c.wiener.covariance_ridge)}",
-        f"syn{_format_name_component(c.wiener.synthetic_distribution)}",
-        f"tr{_optional_value(c.data.train_subset)}",
-        f"te{_optional_value(c.data.test_subset)}",
-        f"nw{_value(c.data.num_workers)}",
-        f"dev{_format_name_component(c.runtime.device)}",
-        f"gpu{_value(c.runtime.gpu)}",
-        f"th{_value(c.runtime.threads)}",
-        f"det{_value(c.runtime.deterministic)}",
     ]
     return "_".join(tokens)
 

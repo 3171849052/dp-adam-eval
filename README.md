@@ -92,11 +92,11 @@ H = lambda_F / (lambda_F + r)
 
 ## Output naming 与文件
 
-运行目录按参考工程风格使用秒级 timestamp，并把所有有效实验 scalar 编码进去，
+运行目录使用不含年份的秒级 timestamp，并只编码核心实验参数，
 例如：
 
 ```text
-20260909-123456_simple_cnn_mnist_dp_fisher_wiener_s42_ep5_b256_eb256_lr0.1_optsgd_mom0_wd0_eps1_d1e-5_C1_accrdp_samppois_acctpoisson_rdp_pois1_beta1_K50_M2560_ridge1e-5_synpink_noise_trall_teall_nw0_devauto_gpu0_th4_det1
+0909-123456_simple_cnn_dp_fisher_wiener_s42_ep5_lr0.1_eps1_d1e-5_beta1_K50_M2560
 ```
 
 碰撞时按秒递增 timestamp。`data.root` 和 `output.root` 不进入目录名；用户指定的
