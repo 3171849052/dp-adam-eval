@@ -14,3 +14,10 @@ data/
 *.log
 *.pt
 .opencode
+# Standalone package build and experiment outputs
+*.egg-info/
+build/
+dist/
+.venv/
+outputs/*
+!outputs/.gitkeep

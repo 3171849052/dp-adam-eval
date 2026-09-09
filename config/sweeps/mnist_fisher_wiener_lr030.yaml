@@ -1,0 +1,41 @@
+algorithm: dp_fisher_wiener
+seed: 42
+model:
+  name: simple_cnn
+data:
+  dataset: mnist
+  root: data
+  batch_size: 256
+  eval_batch_size: 256
+  train_subset: null
+  test_subset: null
+  num_workers: 0
+training:
+  epochs: 5
+  learning_rate: 0.3
+  optimizer: sgd
+  momentum: 0.0
+  weight_decay: 0.0
+privacy:
+  epsilon: 1.0
+  delta: 1.0e-05
+  max_grad_norm: 1.0
+  accountant: rdp
+  sampling: fixed_shuffle_drop_last
+  accounting_convention: inherited_rdp_sample_rate_convention
+  poisson_sampling: false
+wiener:
+  beta: 1
+  refresh_interval: 50
+  synthetic_samples: 2560
+  covariance_ridge: 1.0e-05
+  synthetic_distribution: pink_noise
+runtime:
+  device: auto
+  gpu: 0
+  threads: 4
+  deterministic: true
+logging:
+  eval_interval: 100
+output:
+  root: outputs

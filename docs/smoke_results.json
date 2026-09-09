@@ -1,0 +1,56 @@
+[
+  {
+    "run": "outputs/20260909-103412-459285_simplecnn_mnist_dp_sgd_eps1_lr0p1",
+    "summary": {
+      "status": "completed",
+      "algorithm": "dp_sgd",
+      "seed": 42,
+      "completed_steps": 4,
+      "epsilon_target": 1.0,
+      "delta": 1e-05,
+      "learning_rate": 0.1,
+      "max_grad_norm": 1.0,
+      "initial_model_hash": "8e4e86c4eab8bdeb6a558c645769920030e0ad9ebf5be2002de9e650d0b89a1e",
+      "noise_multiplier": 2.734375,
+      "sample_rate": 0.25,
+      "epsilon_spent": 0.9941875233938002,
+      "final_accuracy": 0.09375,
+      "best_accuracy": 0.09375,
+      "final_test_loss": 9.7860746383667,
+      "wall_time": 2.3059142101556063,
+      "final_model_hash": "d5472e36184571e8efa725334f4270c5e19f791149894a78816befa428b652d7"
+    },
+    "device": "cuda:0",
+    "gpu_name": "NVIDIA GeForce RTX 3080 Ti"
+  },
+  {
+    "run": "outputs/20260909-103631-652922_simplecnn_mnist_dp_fisher_wiener_eps1_lr0p1_K2_M8",
+    "summary": {
+      "status": "completed",
+      "algorithm": "dp_fisher_wiener",
+      "seed": 42,
+      "completed_steps": 4,
+      "epsilon_target": 1.0,
+      "delta": 1e-05,
+      "learning_rate": 0.1,
+      "max_grad_norm": 1.0,
+      "initial_model_hash": "8e4e86c4eab8bdeb6a558c645769920030e0ad9ebf5be2002de9e650d0b89a1e",
+      "noise_multiplier": 2.734375,
+      "sample_rate": 0.25,
+      "epsilon_spent": 0.9941875233938002,
+      "final_accuracy": 0.125,
+      "best_accuracy": 0.15625,
+      "final_test_loss": 2.3027557730674744,
+      "wall_time": 16.853142108768225,
+      "final_model_hash": "a2a834bc9806b93b16ec80285f43237e920b5978e66778741f5fcc76817b74af",
+      "number_of_refreshes": 2,
+      "total_refresh_time": 5.047401860356331,
+      "mean_refresh_time": 2.5237009301781654,
+      "total_filter_time": 0.020344451069831848,
+      "mean_filter_time": 0.005086112767457962,
+      "active_state_bytes": 10905008
+    },
+    "device": "cuda:0",
+    "gpu_name": "NVIDIA GeForce RTX 3080 Ti"
+  }
+]
