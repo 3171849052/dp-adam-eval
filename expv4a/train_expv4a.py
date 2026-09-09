@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 import pandas as pd
+import torch
 
 from expv3 import common as v3_common
 from expv3.common import FISHER_METHOD, save_json, write_csv
@@ -14,7 +15,7 @@ from expv3.train_expv3 import train as train_v3
 
 from expv4a.gamma_estimators import (
     certificate_holds,
-    model_gamma_from_eigenvalues,
+    model_gamma_from_state,
     multiplicative_error,
     ratio_sqrt,
 )
@@ -114,10 +115,12 @@ def _refresh_diagnostics(root, config, spec):
         interval = int(cert["interval_index"])
         layer = cert["layer"]
         control = controller_by_key[(interval, layer)]
-        stats = model_gamma_from_eigenvalues(
-            cert["lambda_A"], cert["lambda_G"], cert["beta_train"], cert["r"]
-        )
         h = torch_h(cert["lambda_A"], cert["lambda_G"], cert["beta_train"], cert["r"])
+        stats = model_gamma_from_state({
+            "lambda_A": torch.as_tensor(cert["lambda_A"], dtype=torch.float64),
+            "lambda_G": torch.as_tensor(cert["lambda_G"], dtype=torch.float64),
+            "H": h,
+        }, cert["beta_train"])
         rows.append({
             "seed": spec["seed"], "run_id": spec["run_id"],
             "learning_rate": spec["learning_rate"], "step": int(cert["refresh_step"]),
@@ -136,7 +139,6 @@ def _refresh_diagnostics(root, config, spec):
 
 
 def torch_h(lambda_a, lambda_g, beta, r):
-    import torch
     lambda_a = torch.as_tensor(lambda_a, dtype=torch.float64)
     lambda_g = torch.as_tensor(lambda_g, dtype=torch.float64)
     lambda_f = lambda_g[:, None] * lambda_a[None, :]

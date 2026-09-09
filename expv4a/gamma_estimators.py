@@ -35,8 +35,9 @@ def model_gamma_from_eigenvalues(lambda_a, lambda_g, beta, r):
     lambda_a = torch.as_tensor(lambda_a, dtype=torch.float64)
     lambda_g = torch.as_tensor(lambda_g, dtype=torch.float64)
     lambda_f = lambda_g[:, None] * lambda_a[None, :]
-    h = torch.where(lambda_f + float(r) > 0,
-                    lambda_f / (lambda_f + float(r)),
+    scaled = float(beta) * lambda_f
+    h = torch.where(scaled + float(r) > 0,
+                    scaled / (scaled + float(r)),
                     torch.zeros_like(lambda_f))
     return model_gamma_from_state({
         "lambda_A": lambda_a, "lambda_G": lambda_g, "H": h,
