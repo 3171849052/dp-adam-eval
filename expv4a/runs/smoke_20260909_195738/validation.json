@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "runs": [
+    {
+      "seed": 42,
+      "run_id": "dp_fisher_wiener_adaptive_beta_lr0p50",
+      "passed": true
+    }
+  ],
+  "certificate_tolerance": 1e-08
+}
