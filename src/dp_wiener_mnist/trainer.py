@@ -184,7 +184,6 @@ def _resolved_config(
 
 def train(c: Config, log: RunLog, data_override: tuple | None = None) -> dict:
     """Run one experiment and preserve partial outputs on every failure."""
-    c.validate()
     started = time.perf_counter()
     model = None
     device = None
@@ -235,6 +234,7 @@ def train(c: Config, log: RunLog, data_override: tuple | None = None) -> dict:
         privacy_steps += 1
 
     try:
+        c.validate()
         device = configure_runtime(c)
         loader, test_loader = build_data(c, data_override)
         train_size = len(loader.dataset)
@@ -431,23 +431,22 @@ def train(c: Config, log: RunLog, data_override: tuple | None = None) -> dict:
         if model is not None:
             summary["final_model_hash"] = digest(model.parameters())
             model.remove_hooks()
-        if device is not None:
-            write_yaml(
-                log.root / "resolved_config.yaml",
-                _resolved_config(
-                    c,
-                    device=device,
-                    train_size=train_size,
-                    test_size=test_size,
-                    steps_per_epoch=steps_per_epoch,
-                    total_steps=total_steps,
-                    sigma=sigma,
-                    sample_rate=sample_rate,
-                    privacy_steps=privacy_steps,
-                    epsilon_spent=epsilon_spent,
-                    run_directory=log.root,
-                ),
-            )
+        write_yaml(
+            log.root / "resolved_config.yaml",
+            _resolved_config(
+                c,
+                device=device,
+                train_size=train_size,
+                test_size=test_size,
+                steps_per_epoch=steps_per_epoch,
+                total_steps=total_steps,
+                sigma=sigma,
+                sample_rate=sample_rate,
+                privacy_steps=privacy_steps,
+                epsilon_spent=epsilon_spent,
+                run_directory=log.root,
+            ),
+        )
         write_json(log.root / "summary.json", summary)
         log.logger.info("Summary: %s", summary)
     return summary

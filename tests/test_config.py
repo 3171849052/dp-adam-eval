@@ -21,7 +21,10 @@ def test_configs(path):
         {"training": {"weight_decay": 0.1}},
         {"training": {"learning_rate": float("nan")}},
         {"privacy": {"delta": 1}},
-        {"privacy": {"poisson_sampling": True}},
+        {"privacy": {"poisson_sampling": False}},
+        {"privacy": {"sampling": "fixed_shuffle_drop_last"}},
+        {"privacy": {"accounting_convention": "inherited_rdp_sample_rate_convention"}},
+        {"logging": {"eval_interval": 100}},
         {"privacy": {"accountant": "gdp"}},
         {"wiener": {"beta": 2}},
         {"wiener": {"synthetic_samples": 3}},
@@ -32,3 +35,11 @@ def test_configs(path):
 def test_reject(raw):
     with pytest.raises(ValueError):
         Config.from_dict(raw)
+
+
+def test_poisson_defaults_are_strict():
+    c = Config()
+    c.validate()
+    assert c.privacy.sampling == "poisson"
+    assert c.privacy.accounting_convention == "poisson_rdp"
+    assert c.privacy.poisson_sampling is True

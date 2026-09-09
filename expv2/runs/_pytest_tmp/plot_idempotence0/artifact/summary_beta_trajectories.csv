@@ -1,0 +1,3 @@
+comparison,n_samples,valid_samples,median_absolute_log10_beta_difference,mean_absolute_log10_beta_difference,ratio_median,spearman_oracle
+dp_sgd_vs_fisher_lr0p10,8,8,0.4475545389609854,0.7304750547624038,1.4148121777123226,0.5714285714285715
+fisher_lr0p10_vs_lr0p80_seed42,8,8,0.11683902527481717,0.09498556210861864,0.8628697622012729,0.9285714285714287

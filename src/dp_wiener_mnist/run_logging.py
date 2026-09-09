@@ -37,6 +37,8 @@ METRICS_FIELDS = (
     "mean_filter_time",
     "active_state_bytes",
 )
+# Backwards-compatible import name; its schema is now epoch-level.
+FIELDS = METRICS_FIELDS
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,11 @@ def format_run_name(config, timestamp: datetime | None = None) -> str:
     """Encode every effective scalar experiment setting in a stable name."""
     stamp = timestamp or datetime.now()
     c = config
+    sampling_name = (
+        "pois"
+        if c.privacy.sampling == "poisson"
+        else _format_name_component(c.privacy.sampling)
+    )
     tokens = [
         f"{stamp:%Y%m%d-%H%M%S}",
         _format_name_component(c.model.name),
@@ -107,7 +114,7 @@ def format_run_name(config, timestamp: datetime | None = None) -> str:
         f"d{_value(c.privacy.delta)}",
         f"C{_value(c.privacy.max_grad_norm)}",
         f"acc{_format_name_component(c.privacy.accountant)}",
-        f"samp{_format_name_component(c.privacy.sampling)}",
+        f"samp{sampling_name}",
         f"acct{_format_name_component(c.privacy.accounting_convention)}",
         f"pois{_value(c.privacy.poisson_sampling)}",
         f"beta{_value(c.wiener.beta)}",
@@ -272,6 +279,7 @@ class RunLog:
 
 
 __all__ = [
+    "FIELDS",
     "METRICS_FIELDS",
     "MetricsCSVWriter",
     "RunLog",

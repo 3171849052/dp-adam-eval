@@ -71,7 +71,7 @@ forward/backward，直接执行零 summed gradient 加 Gaussian noise，再除�
 `metrics.csv` 每完成一个 epoch 写一行，并立即 `flush` 和 `fsync`。其中
 `train_loss` 按实际 sampled examples 加权，`clip_rate` 为累计 clipped examples
 除以累计 sampled examples；空 epoch 对这两个字段写空值。每个 epoch 结束后只评估
-一次，不再支持 step-based `eval_interval`。
+一次，不再进行按 step 的评估。
 
 ## RNG 与 Fisher 数学
 

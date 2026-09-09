@@ -17,10 +17,14 @@
   "final_test_loss": 5.835262596607208,
   "final_model_hash": "d61ee370a44381858ca1bc327bc6080d3d9bb77b35f2278d33b6d7de16cd5b3e",
   "parameters_finite": true,
-  "wall_time": 0.13593407813459635,
-  "diagnostic_seconds": 0.0330166332423687,
-  "core_training_runtime": 0.10291744489222765,
+  "wall_time": 0.07921473681926727,
+  "diagnostic_seconds": 0.01897264178842306,
+  "research_overhead_seconds": 0.01897264178842306,
+  "core_training_runtime": 0.06024209503084421,
   "total_refresh_time": 0,
+  "total_measurement_only_refresh_time": 0,
+  "total_beta_trace_time": 0,
+  "fisher_beta_trace_time": 0,
   "mean_refresh_time": 0.0,
   "number_of_refreshes": 0,
   "total_diagnostic_spectrum_time": 0,
@@ -39,5 +43,9 @@
   "beta_step_rows": 0,
   "beta_train": 1.0,
   "filter_position": "after global clipping and DP Gaussian noise",
-  "synthetic_fisher_role": "measurement_only_for_dp_sgd"
+  "synthetic_fisher_role": "measurement_only_for_dp_sgd",
+  "contains_non_dp_oracle": true,
+  "release_safe_under_dp": false,
+  "deployable_beta_estimator_is_postprocessing": true,
+  "oracle_is_research_only": true
 }

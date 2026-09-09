@@ -15,6 +15,7 @@ def test_pipeline(config, tiny_data, tmp_path):
     assert validate(config, tmp_path, tmp_path, require_tests=False)["passed"]
     summarize(config, tmp_path, tmp_path, require_tests=False)
     plot(config, tmp_path, tmp_path, require_tests=False)
+    assert validate(config, tmp_path, tmp_path, require_tests=False)["passed"]
     for name in ("summary_runs.csv", "summary_beta_layers.csv", "summary_beta_trajectories.csv",
                  "summary_beta_lagged.csv", "summary_window_sensitivity.csv",
                  "beta_trajectory_dependence.csv", "summary.json", "validation.json"):
@@ -26,4 +27,3 @@ def test_pipeline(config, tiny_data, tmp_path):
         assert len(pd.read_csv(root / "beta_lagged_metrics.csv")) == 4
     assert len(list((tmp_path / "figures").glob("*.png"))) == 7
     assert len(list((tmp_path / "figures").glob("*.pdf"))) == 7
-

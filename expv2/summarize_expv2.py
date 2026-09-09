@@ -176,6 +176,10 @@ def summarize(config, runs, output, require_tests=True):
         experiment="expv2", beta_train=1.0, primary_window=config["beta_primary_window"],
         window_sensitivity=list(config["beta_window_sensitivity"]), no_success_thresholds=True,
         beta_is_second_moment_scale=True, beta_not_paper_alpha=True,
+        contains_non_dp_oracle=True,
+        release_safe_under_dp=False,
+        deployable_beta_estimator_is_postprocessing=True,
+        oracle_is_research_only=True,
         interpretation_cases={
             "A": "contemporaneous and lagged DP beta both reliable supports ExpV2b",
             "B": "contemporaneous good but lagged poor indicates dynamics faster than the lag",
@@ -194,4 +198,3 @@ def summarize(config, runs, output, require_tests=True):
 
 if __name__ == "__main__":
     summarize(*cli())
-

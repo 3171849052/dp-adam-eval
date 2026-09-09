@@ -1,3 +1,3 @@
-seed,run_id,method,config_fingerprint,step,refresh_index,refresh_time,diagnostic_spectrum_time,active_state_bytes,measurement_only
-42,dp_sgd_lr0p10,dp_sgd,dd6ba0265f44ec1b8885c6adddd5d175420afc500b0a048424ac26b6104eb75f,0,0,0.02291698381304741,0.0,0,True
-42,dp_sgd_lr0p10,dp_sgd,dd6ba0265f44ec1b8885c6adddd5d175420afc500b0a048424ac26b6104eb75f,2,1,0.018057435750961304,0.0,0,True
+seed,run_id,method,config_fingerprint,step,refresh_index,refresh_time,beta_trace_time,diagnostic_spectrum_time,active_state_bytes,measurement_only
+42,dp_sgd_lr0p10,dp_sgd,dd6ba0265f44ec1b8885c6adddd5d175420afc500b0a048424ac26b6104eb75f,0,0,0.028317268937826157,0.00014208070933818817,0.0,0,True
+42,dp_sgd_lr0p10,dp_sgd,dd6ba0265f44ec1b8885c6adddd5d175420afc500b0a048424ac26b6104eb75f,2,1,0.01907517947256565,0.00011748354882001877,0.0,0,True

@@ -48,7 +48,9 @@ additional descriptive field; primary analysis uses the raw estimator. The
 primary interval estimate is a ratio of sums, including the final partial
 interval (20 steps in the 1170-step formal protocol), never a mean of per-step
 ratios. The lagged and hold-last-positive files are offline evaluations and do
-not feed training.
+not feed training. A non-finite research beta value does not stop a run or
+alter training; `diagnostic_valid`, `beta_diagnostics_finite`, and the summary
+non-finite-step bookkeeping record that condition explicitly.
 
 The synthetic Fisher is exactly the ExpV1 construction: upstream
 `KFACRecorder`, `compute_covariances(..., eps=1e-5)`, and covariance averaging,
@@ -63,11 +65,22 @@ trajectory.
 
 The deployable estimator uses only already privatized `y`, public/known `r`,
 and synthetic Fisher factors, so it is post-processing and adds no privacy
-accountant step. The oracle is explicitly a non-DP research diagnostic. Raw
+accountant step. This DP-safe statement applies only to that deployable beta
+estimator. The oracle is explicitly a non-DP research diagnostic. Raw
 `s`, `y`, Gaussian noise tensors, Fisher matrices, eigenvectors, private
 per-example gradients, and actual noise realizations are never written to
 artifact files. In particular, ExpV2 never records `n` and subtracts `y-n`;
 it subtracts only the expected noise energy `d*r`.
+
+The complete ExpV2 research artifact also contains private-derived non-DP
+oracle diagnostics such as `clean_signal_energy`, `beta_oracle_step`, pooled
+`beta_oracle`, and oracle observability metrics. Therefore an artifact as a
+whole is not DP-release-safe: `release_safe_under_dp` is `false` and
+`contains_non_dp_oracle` is `true`. Do not publicly release those oracle
+fields from a private-data run unless they are separately protected by a DP
+mechanism. Metadata also records
+`deployable_beta_estimator_is_postprocessing=true` and
+`oracle_is_research_only=true`.
 
 ## Artifacts
 
@@ -103,6 +116,15 @@ negative interval rate, positive coverage, correlation, lagged quality,
 observability SNR, and window sensitivity. There is deliberately no
 correlation or negative-rate pass/fail threshold.
 
+`diagnostic_seconds` means per-step diagnostic and diagnostic-spectrum timing.
+`research_overhead_seconds` additionally includes DP-SGD's measurement-only
+synthetic refreshes and Fisher-Wiener beta-trace construction. Consequently,
+`core_training_runtime` excludes those research-only costs while retaining the
+algorithmic Fisher-Wiener refresh. Validation is strict and idempotent: it can
+be rerun after summarize and plot have created `figures/`. Only canonical
+seed/run combinations are accepted; for example, the stress Fisher run is
+allowed for seed 42, not seeds 7 or 91.
+
 ## Smoke command
 
 ```bash
@@ -119,6 +141,8 @@ conda run -n curve python -m expv2.summarize_expv2 \
   --config expv2/configs/smoke.json --runs "$EXPV2_SMOKE_RUNS" --output "$EXPV2_SMOKE_RUNS"
 conda run -n curve python -m expv2.plot_expv2 \
   --config expv2/configs/smoke.json --runs "$EXPV2_SMOKE_RUNS" --output "$EXPV2_SMOKE_RUNS"
+conda run -n curve python -m expv2.validate_expv2 \
+  --config expv2/configs/smoke.json --runs "$EXPV2_SMOKE_RUNS" --output "$EXPV2_SMOKE_RUNS"
 ```
 
 ## Formal command — intentionally not run by implementation
@@ -134,5 +158,6 @@ conda run -n curve python -m expv2.summarize_expv2 \
   --config expv2/configs/full.json --runs "$EXPV2_FORMAL_RUNS" --output "$EXPV2_FORMAL_RUNS"
 conda run -n curve python -m expv2.plot_expv2 \
   --config expv2/configs/full.json --runs "$EXPV2_FORMAL_RUNS" --output "$EXPV2_FORMAL_RUNS"
+conda run -n curve python -m expv2.validate_expv2 \
+  --config expv2/configs/full.json --runs "$EXPV2_FORMAL_RUNS" --output "$EXPV2_FORMAL_RUNS"
 ```
-

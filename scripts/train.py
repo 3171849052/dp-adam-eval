@@ -124,7 +124,7 @@ def run_experiment(config_file: str | Path, run_dir: str | Path | None = None) -
     config_path = Path(config_file)
     c = load_config(config_path)
     _set_configured_gpu(c)
-    from dp_wiener_mnist.run_logging import RunLog, create_run_directory, run_paths_from_directory
+    from dp_wiener_mnist.run_logging import RunLog, run_paths_from_directory
     from dp_wiener_mnist.trainer import train
 
     if run_dir is None:
@@ -169,6 +169,10 @@ def main() -> int:
         parser.error("--prepare-run and --run-dir are mutually exclusive")
     if args.print_gpu and args.validate_gpu:
         parser.error("--print-gpu and --validate-gpu are mutually exclusive")
+    if (args.prepare_run or args.run_dir is not None) and (
+        args.print_gpu or args.validate_gpu
+    ):
+        parser.error("GPU inspection cannot be combined with a run mode")
     if args.tmux_session_name is not None:
         if args.prepare_run or args.run_dir is not None or args.print_gpu or args.validate_gpu:
             parser.error("--tmux-session-name cannot be combined with another mode")

@@ -78,6 +78,10 @@ def build_data(
         ),
         num_workers=c.data.num_workers,
         collate_fn=_poisson_collate,
+        # DataLoader itself draws a worker base seed on iterator creation.
+        # Give that bookkeeping a private generator so it cannot consume the
+        # global RNG or advance the sampler's Bernoulli generator.
+        generator=torch.Generator().manual_seed(c.seed + 1),
     )
     test = DataLoader(
         Subset(test, range(m)),

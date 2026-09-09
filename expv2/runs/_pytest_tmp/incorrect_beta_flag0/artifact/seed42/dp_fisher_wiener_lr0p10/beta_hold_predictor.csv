@@ -1,0 +1,5 @@
+seed,run_id,method,learning_rate,layer,source_interval,target_interval,beta_hold_predictor,beta_oracle_current,hold_prediction_positive,hold_ratio,hold_log10_abs_ratio_error
+42,dp_fisher_wiener_lr0p10,dp_fisher_wiener,0.1,conv1,0,1,1.0,1.4601558861077246,True,0.6848583836248179,0.1643992234984188
+42,dp_fisher_wiener_lr0p10,dp_fisher_wiener,0.1,conv2,0,1,2264.2297572437183,3.3345252405536225,True,679.026126330294,2.8318864845938903
+42,dp_fisher_wiener_lr0p10,dp_fisher_wiener,0.1,fc1,0,1,844.3859804064306,0.4548898694571362,True,1856.242658061648,3.2686347489133447
+42,dp_fisher_wiener_lr0p10,dp_fisher_wiener,0.1,fc2,0,1,1.0,0.25370338178251944,True,3.941610840872526,0.5956737437372817

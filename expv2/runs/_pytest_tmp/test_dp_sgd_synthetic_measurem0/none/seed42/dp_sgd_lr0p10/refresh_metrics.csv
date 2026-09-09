@@ -1,1 +1,1 @@
-seed,run_id,method,config_fingerprint,step,refresh_index,refresh_time,diagnostic_spectrum_time,active_state_bytes,measurement_only
+seed,run_id,method,config_fingerprint,step,refresh_index,refresh_time,beta_trace_time,diagnostic_spectrum_time,active_state_bytes,measurement_only

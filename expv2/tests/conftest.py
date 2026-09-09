@@ -48,6 +48,16 @@ REQUIRED_NODEIDS = {
     "expv2/tests/test_pairing.py::test_paired_rng",
     "expv2/tests/test_regression.py::test_regression",
     "expv2/tests/test_pipeline.py::test_pipeline",
+    "expv2/tests/test_validation_edges.py::test_validator_accepts_completed_run_with_nonfinite_beta_diagnostic",
+    "expv2/tests/test_validation_edges.py::test_validator_rejects_incorrect_beta_diagnostic_flag",
+    "expv2/tests/test_validation_edges.py::test_validator_rejects_inconsistent_beta_summary",
+    "expv2/tests/test_validation_edges.py::test_validation_is_idempotent_after_plot",
+    "expv2/tests/test_validation_edges.py::test_beta_step_cartesian_grid",
+    "expv2/tests/test_validation_edges.py::test_trace_f_algebra_validation",
+    "expv2/tests/test_validation_edges.py::test_refresh_index_validation",
+    "expv2/tests/test_validation_edges.py::test_refresh_interval_trace_consistency",
+    "expv2/tests/test_validation_edges.py::test_dp_sgd_measurement_runtime_accounting",
+    "expv2/tests/test_validation_edges.py::test_invalid_seed_run_combination_rejected",
 }
 PASSED = set()
 
@@ -70,4 +80,3 @@ def pytest_sessionfinish(session, exitstatus):
                 isolation="beta diagnostics and DP-SGD synthetic measurement are post-hoc and trajectory isolated",
             ),
         )
-

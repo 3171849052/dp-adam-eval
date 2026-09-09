@@ -10,9 +10,29 @@ from collections import defaultdict
 
 EPS = 1e-12
 
+# These are derived research diagnostics. Core measurements are validated
+# separately by the artifact validator and remain required to be finite.
+BETA_STEP_DIAGNOSTIC_FIELDS = (
+    "clean_signal_energy",
+    "noisy_gradient_energy",
+    "expected_noise_energy",
+    "noise_debiased_energy_raw",
+    "beta_oracle_step",
+    "beta_dp_step_raw",
+    "beta_dp_step_positive",
+)
+
 
 def _finite(value):
-    return isinstance(value, (int, float)) and math.isfinite(float(value))
+    try:
+        return value is not None and math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def beta_step_diagnostic_is_finite(row):
+    """Return the canonical finiteness flag for one beta step row."""
+    return all(_finite(row.get(field)) for field in BETA_STEP_DIAGNOSTIC_FIELDS)
 
 
 def safe_ratio(numerator, denominator, eps=EPS):
@@ -33,7 +53,7 @@ def single_step_beta(clean_signal_energy, noisy_gradient_energy, dimension, trac
     debiased = float(noisy_gradient_energy) - expected_noise_energy
     oracle = safe_ratio(clean_signal_energy, trace_F, eps)
     raw = safe_ratio(debiased, trace_F, eps)
-    return dict(
+    result = dict(
         clean_signal_energy=float(clean_signal_energy),
         noisy_gradient_energy=float(noisy_gradient_energy),
         expected_noise_energy=expected_noise_energy,
@@ -42,11 +62,9 @@ def single_step_beta(clean_signal_energy, noisy_gradient_energy, dimension, trac
         beta_dp_step_raw=raw,
         beta_dp_step_positive=max(raw, 0.0),
         beta_dp_step_negative=raw < 0,
-        diagnostic_valid=all(
-            _finite(value) for value in (clean_signal_energy, noisy_gradient_energy,
-                                          expected_noise_energy, debiased, oracle, raw)
-        ),
     )
+    result["diagnostic_valid"] = beta_step_diagnostic_is_finite(result)
+    return result
 
 
 def theoretical_conditional_variance(r, signal_energy, dimension):

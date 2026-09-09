@@ -9,7 +9,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="${PYTHON:-python}"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-if [[ $# -eq 2 && $1 == "--config" ]]; then
+if [[ $# -eq 1 && ( $1 == "--help" || $1 == "-h" ) ]]; then
+  echo "usage: $0 [--config CONFIG]"
+  echo "       $0 [CONFIG]"
+  exit 0
+elif [[ $# -eq 2 && $1 == "--config" ]]; then
   CONFIG="$2"
 elif [[ $# -eq 1 && $1 != "--config" ]]; then
   CONFIG="$1"

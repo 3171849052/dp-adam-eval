@@ -48,11 +48,13 @@ def clip_and_noise_gradients(
         # private backward pass in this case, so construct its zero summed
         # gradient directly and consume exactly one noise tensor per parameter.
         for p in trainable:
-            summed = torch.zeros_like(p).contiguous().view(-1)
+            summed = torch.zeros_like(p)
             if store_summed_grad:
-                p.summed_grad = (summed / expected_batch_size).view_as(p)
+                p.summed_grad = summed / expected_batch_size
             noise = torch.randn_like(summed) * noise_multiplier * max_grad_norm
-            p.grad = ((summed + noise) / expected_batch_size).view_as(p)
+            p.grad = (summed + noise) / expected_batch_size
+            if hasattr(p, "grad_sample"):
+                p.grad_sample = None
         return
 
     params = trainable

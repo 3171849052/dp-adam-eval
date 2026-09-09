@@ -70,7 +70,7 @@ LAYER_FIELDS = [
 ]
 REFRESH_FIELDS = [
     "seed", "run_id", "method", "config_fingerprint", "step", "refresh_index",
-    "refresh_time", "diagnostic_spectrum_time", "active_state_bytes", "measurement_only",
+    "refresh_time", "beta_trace_time", "diagnostic_spectrum_time", "active_state_bytes", "measurement_only",
 ]
 EIGEN_FIELDS = [
     "seed", "run_id", "method", "config_fingerprint", "step", "layer", "bin", "count",
@@ -197,7 +197,7 @@ def _beta_capture(model, trace_state, sigma, config, batch_size, seed, run_id, m
         estimate = beta_estimation.single_step_beta(
             clean_energy, noisy_energy, dimension, trace["trace_F"], r
         )
-        estimate["diagnostic_valid"] = _diagnostic_row_finite(estimate)
+        estimate["diagnostic_valid"] = beta_estimation.beta_step_diagnostic_is_finite(estimate)
         rows.append(dict(
             seed=seed, run_id=run_id, method=method, learning_rate=float(learning_rate),
             step=step, layer=name, r=r, dimension=dimension, **trace,
@@ -282,7 +282,7 @@ def private_update(
         diagnostic_seconds += time.perf_counter() - started
     rows.update(clip_rate=clip_rate, wiener_filter_time=filter_time)
     rows["beta_diagnostics_finite"] = all(
-        _diagnostic_row_finite(row) for row in beta_rows
+        beta_estimation.beta_step_diagnostic_is_finite(row) for row in beta_rows
     ) if beta_measurement else True
     return rows, layer_rows, bins, beta_rows, audit, diagnostic_seconds
 
@@ -315,10 +315,22 @@ def _summary(c, spec, model, rows, refreshes, accountant, sigma, step, wall,
     else:
         auc, late = None, []
     nonfinite_diagnostics = [int(row["step"]) for row in rows if not row.get("diagnostics_finite", True)]
-    nonfinite_beta = [int(row["step"]) for row in rows if not row.get("beta_diagnostics_finite", True)]
+    nonfinite_beta = sorted({
+        int(row["step"]) for row in rows if not row.get("beta_diagnostics_finite", True)
+    })
     refresh_total = sum(float(row["refresh_time"]) for row in refreshes)
+    measurement_only_refresh_total = sum(
+        float(row["refresh_time"]) for row in refreshes if row["measurement_only"]
+    )
+    beta_trace_total = sum(float(row["beta_trace_time"]) for row in refreshes)
+    fisher_beta_trace_total = sum(
+        float(row["beta_trace_time"]) for row in refreshes if not row["measurement_only"]
+    )
     spectrum_total = sum(float(row["diagnostic_spectrum_time"]) for row in refreshes)
     filter_total = sum(float(row.get("wiener_filter_time", 0.0)) for row in rows)
+    research_overhead = (
+        diagnostic_seconds + measurement_only_refresh_total + fisher_beta_trace_total
+    )
     return dict(
         seed=spec["seed"], run_id=spec["run_id"], method=spec["method"],
         learning_rate=spec["learning_rate"], fingerprint=fingerprint(c), status=status,
@@ -332,8 +344,12 @@ def _summary(c, spec, model, rows, refreshes, accountant, sigma, step, wall,
         final_test_loss=finite_evaluations[-1].get("test_loss") if status == "completed" and finite_evaluations else None,
         final_model_hash=digest(model.parameters()), parameters_finite=_all_finite(model.parameters()),
         wall_time=wall, diagnostic_seconds=diagnostic_seconds,
-        core_training_runtime=wall - diagnostic_seconds,
+        research_overhead_seconds=research_overhead,
+        core_training_runtime=wall - research_overhead,
         total_refresh_time=refresh_total,
+        total_measurement_only_refresh_time=measurement_only_refresh_total,
+        total_beta_trace_time=beta_trace_total,
+        fisher_beta_trace_time=fisher_beta_trace_total,
         mean_refresh_time=refresh_total / len(refreshes) if refreshes else 0.0,
         number_of_refreshes=len(refreshes),
         total_diagnostic_spectrum_time=spectrum_total,
@@ -353,6 +369,10 @@ def _summary(c, spec, model, rows, refreshes, accountant, sigma, step, wall,
         beta_step_rows=len(beta_rows), beta_train=1.0,
         filter_position="after global clipping and DP Gaussian noise",
         synthetic_fisher_role="measurement_only_for_dp_sgd" if spec["method"] == "dp_sgd" else "training_filter_and_measurement",
+        contains_non_dp_oracle=True,
+        release_safe_under_dp=False,
+        deployable_beta_estimator_is_postprocessing=True,
+        oracle_is_research_only=True,
     )
 
 
@@ -438,6 +458,10 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         output=str(root), filter_position="after global clipping and DP Gaussian noise",
         synthetic_fisher_for_dp_sgd=beta_measurement and spec["method"] == "dp_sgd",
         no_private_fisher=True, no_beta_feedback=True,
+        contains_non_dp_oracle=True,
+        release_safe_under_dp=False,
+        deployable_beta_estimator_is_postprocessing=True,
+        oracle_is_research_only=True,
     )
     save_json(root / "metadata.json", metadata)
 
@@ -459,6 +483,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
             for _ in range(len(loader)):
                 refreshed = step % config["K"] == 0 and (beta_measurement or spec["method"] == "dp_fisher_wiener")
                 refresh_time = 0.0
+                beta_trace_time = 0.0
                 diagnostic_spectrum_time = 0.0
                 refresh_index = current_refresh_index
                 if refreshed:
@@ -466,7 +491,14 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                     refresh_started = time.perf_counter()
                     samples, synthetic_audit = synthetic_samples(config, device, synthetic_rng)
                     covariances = build_covariances(model._module.state_dict(), samples, config, device)
-                    trace_state = build_trace_state(covariances) if beta_measurement else None
+                    if beta_measurement:
+                        sync(model)
+                        trace_started = time.perf_counter()
+                        trace_state = build_trace_state(covariances)
+                        sync(model)
+                        beta_trace_time = time.perf_counter() - trace_started
+                    else:
+                        trace_state = None
                     if spec["method"] == "dp_fisher_wiener":
                         active = build_fisher_state(covariances, sigma, config["max_grad_norm"], config["batch_size"])
                     else:
@@ -485,6 +517,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                     current_refresh_index = refresh_index
                     refreshes.append(dict(
                         step=step, refresh_index=refresh_index, refresh_time=refresh_time,
+                        beta_trace_time=beta_trace_time,
                         diagnostic_spectrum_time=diagnostic_spectrum_time,
                         active_state_bytes=state_bytes(active), measurement_only=spec["method"] == "dp_sgd",
                     ))
@@ -568,6 +601,25 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     return metadata
 
 
+def selected_run_specs(config, seeds, requested_run="all"):
+    """Resolve CLI seed/run selections and reject invalid combinations."""
+    selected = []
+    for seed in seeds:
+        allowed = run_specs_for_seed(config, seed)
+        if requested_run == "all":
+            chosen = allowed
+        else:
+            chosen = [spec for spec in allowed if spec["run_id"] == requested_run]
+            if not chosen:
+                allowed_names = ", ".join(spec["run_id"] for spec in allowed)
+                raise ValueError(
+                    f"Requested seed {seed} with run {requested_run}; "
+                    f"allowed runs for that seed: {allowed_names}"
+                )
+        selected.extend(dict(spec, seed=seed) for spec in chosen)
+    return selected
+
+
 def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--config", default=str(ROOT / "configs" / "full.json"))
@@ -577,12 +629,8 @@ def main():
     args = parser.parse_args()
     config = read_config(args.config)
     seeds = config["seeds"] if args.seed is None else [args.seed]
-    for seed in seeds:
-        specs = run_specs_for_seed(config, seed)
-        if args.run != "all":
-            specs = [spec for spec in specs if spec["run_id"] == args.run]
-        for spec in specs:
-            train(config, seed, spec["run_id"], args.output)
+    for spec in selected_run_specs(config, seeds, args.run):
+        train(config, spec["seed"], spec["run_id"], args.output)
     if config["smoke"] and args.run == "all":
         (ROOT / "runs" / "latest_smoke_path.txt").write_text(str(Path(args.output).resolve()) + "\n")
 

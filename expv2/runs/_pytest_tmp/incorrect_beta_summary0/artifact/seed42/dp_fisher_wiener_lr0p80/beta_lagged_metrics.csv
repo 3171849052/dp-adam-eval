@@ -1,0 +1,5 @@
+seed,run_id,method,learning_rate,layer,source_interval,target_interval,beta_dp_previous_raw,beta_oracle_current,lag_prediction_positive,lag_ratio,lag_log10_abs_ratio_error
+42,dp_fisher_wiener_lr0p80,dp_fisher_wiener,0.8,conv1,0,1,-3827.0371248293127,1.89931981618567,False,,
+42,dp_fisher_wiener_lr0p80,dp_fisher_wiener,0.8,conv2,0,1,2263.661286007955,5.673600641204314,True,398.9814280490944,2.6009526804398404
+42,dp_fisher_wiener_lr0p80,dp_fisher_wiener,0.8,fc1,0,1,844.4089690383291,0.34548332477947785,True,2444.138134821169,3.3881257471905273
+42,dp_fisher_wiener_lr0p80,dp_fisher_wiener,0.8,fc2,0,1,-55.647942146307464,0.3494740601179202,False,,
