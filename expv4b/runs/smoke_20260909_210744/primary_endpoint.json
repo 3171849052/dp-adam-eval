@@ -1,0 +1,10 @@
+{
+  "comparison": "C-B",
+  "endpoint": "accuracy_auc",
+  "planned_pairs": 1,
+  "completed_pairs": 1,
+  "positive_pairs": 0,
+  "mean_paired_difference": 0.0,
+  "median_paired_difference": 0.0,
+  "smoke_functional_only": true
+}

@@ -75,7 +75,7 @@ TRAIN_FIELDS = [
     "diagnostics_finite", "beta_diagnostics_finite",
     "oracle_diagnostics_finite", "oracle_diagnostic_error",
 ]
-VALID_DIVERGENCE_STAGES = {"loss", "noisy_gradient", "filtered_gradient", "parameters"}
+VALID_DIVERGENCE_STAGES = {"loss", "noisy_gradient", "filtered_gradient", "compensated_gradient", "parameters"}
 LAYER_FIELDS = [
     "seed", "run_id", "method", "config_fingerprint", "step", "layer", "learning_rate",
     "clean_clipped_norm", "actual_noise_norm", "noisy_gradient_norm", "filtered_gradient_norm",
@@ -288,7 +288,7 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
                    beta_measurement=True, refresh_index=None, step=0, run_id=None,
                    seed=None, diagnostic_state=None, active_beta=None, active_source=None,
                    oracle_diagnostics=True, on_dp_mechanism_executed=None,
-                   on_beta_observation=None):
+                   on_beta_observation=None, gamma=None, gamma_experiment=None):
     """Execute one DP mechanism, optional adaptive filter, and SGD update.
 
     The fixed order is: per-sample gradients -> global clipping/noise -> capture
@@ -418,6 +418,15 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
             ),
         )
 
+    gamma_metrics = None
+    if gamma is not None:
+        gamma_metrics = gamma_experiment.compensate(model, gamma, active_beta)
+        if not all_finite(p.grad for p in model.parameters()):
+            raise DivergenceError(step, "compensated_gradient", _partial_timing_snapshot(
+                beta_observation_seconds=beta_observation_seconds,
+                controller_seconds=controller_seconds, oracle_seconds=oracle_seconds,
+                reconstruction_seconds=reconstruction_seconds, filter_time=filter_time))
+
     optimizer.step()
     if not all_finite(model.parameters()):
         raise DivergenceError(
@@ -437,10 +446,12 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
         sync(model)
         started = time.perf_counter()
         try:
-            rows, layer_rows, _ = diagnose(
+            diagnose_update = diagnose if gamma is None else gamma_experiment.diagnose_compensated
+            extra = {} if gamma is None else {"gamma": gamma, "gamma_metrics": gamma_metrics}
+            rows, layer_rows, _ = diagnose_update(
                 model, noisy_for_diagnostics, active,
                 diagnostic_state, "dp_fisher_wiener" if method == FISHER_METHOD else "dp_sgd",
-                False, 0,
+                False, 0, **extra,
             )
             rows = add_effective_step_metrics(rows, learning_rate)
             layer_rows = [add_effective_step_metrics(value, learning_rate) for value in layer_rows]
@@ -575,7 +586,7 @@ def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall
         "beta_diagnostic_nonfinite_steps": sorted({int(row["step"]) for row in rows if not row.get("beta_diagnostics_finite", True)}),
         "active_state_bytes": state_bytes(active),
         "diverged_step": diverged_step,
-        "beta_algorithm_active": spec["method"] == FISHER_METHOD,
+        "beta_algorithm_active": spec.get("adaptive_beta", spec["method"] == FISHER_METHOD),
         "filter_position": "after global clipping and DP Gaussian noise",
         "synthetic_fisher_role": "measurement_only_for_dp_sgd" if spec["method"] == DP_METHOD else "training_filter_and_measurement",
         "contains_non_dp_oracle": bool(oracle_diagnostics), "release_safe_under_dp": False,
@@ -643,7 +654,7 @@ def _controller_rows(config, spec, step, interval, trace_state, active, beta1_st
             "fallback_count": counts.get("fallback_count", 0), **trace,
             "beta_scaled_trace_F": (beta * trace["trace_F"] if beta is not None else None),
             **current_stats, **beta1_stats, **hashes,
-            "beta_algorithm_active": spec["method"] == FISHER_METHOD,
+            "beta_algorithm_active": spec.get("adaptive_beta", spec["method"] == FISHER_METHOD),
         })
     return rows
 
@@ -685,12 +696,12 @@ def _enrich_intervals(intervals, method, refresh_rows, controller_rows, successf
 
 def _write_artifacts(root, config, spec, rows, layers, refreshes, beta_steps,
                      beta_intervals, controller_rows, failed_step_rows, pairing,
-                     h_certificates):
+                     h_certificates, extra_fields=()):
     fp = fingerprint(config)
     prefix = {"seed": spec["seed"], "run_id": spec["run_id"], "method": spec["method"],
               "learning_rate": spec["learning_rate"], "config_fingerprint": fp}
-    write_csv(root / "train_metrics.csv", [dict(prefix, **row) for row in rows], TRAIN_FIELDS)
-    write_csv(root / "layer_metrics.csv", [dict(prefix, **row) for row in layers], LAYER_FIELDS)
+    write_csv(root / "train_metrics.csv", [dict(prefix, **row) for row in rows], [*TRAIN_FIELDS, *extra_fields])
+    write_csv(root / "layer_metrics.csv", [dict(prefix, **row) for row in layers], [*LAYER_FIELDS, *extra_fields])
     write_csv(root / "refresh_metrics.csv", [dict(prefix, **row) for row in refreshes], REFRESH_FIELDS)
     write_csv(root / "beta_step_metrics.csv", [dict(prefix, **row) for row in beta_steps], BETA_STEP_FIELDS)
     write_csv(root / "beta_interval_metrics.csv", beta_intervals, BETA_INTERVAL_FIELDS)
@@ -703,22 +714,24 @@ def _write_artifacts(root, config, spec, rows, layers, refreshes, beta_steps,
 
 
 def train(config, seed, run_name, output, data_override=None, *, diagnostics=True,
-          beta_measurement=True, oracle_diagnostics=True, synthetic_measurement=True):
+          beta_measurement=True, oracle_diagnostics=True, synthetic_measurement=True, experiment=None):
     """Run one of the four canonical paired trajectories."""
-    check_config(config)
+    (check_config if experiment is None else experiment.check_config)(config)
+    specs = run_specs(config) if experiment is None else experiment.run_specs(config)
     if seed not in config["seeds"]:
         raise ValueError("Unknown seed")
-    spec = next((item for item in run_specs(config) if item["run_id"] == run_name), None)
+    spec = next((item for item in specs if item["run_id"] == run_name), None)
     if spec is None:
         raise ValueError("Unknown canonical run")
     spec = dict(spec, seed=seed)
     if not synthetic_measurement and (spec["method"] == FISHER_METHOD or beta_measurement):
         raise ValueError("Disabling synthetic measurement requires DP-SGD and beta_measurement=False")
-    root = output_path(output) / f"seed{seed}" / run_name
+    root = (output_path(output) if experiment is None else Path(output).resolve()) / f"seed{seed}" / run_name
     root.mkdir(parents=True, exist_ok=False)
     save_json(root / "config.json", config)
     current_provenance = provenance()
-    require_pinned(current_provenance, config["smoke"])
+    if experiment is None:
+        require_pinned(current_provenance, config["smoke"])
     device = (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")) \
         if config["device"] == "auto" else torch.device(config["device"])
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -749,7 +762,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     accountant = RDPAccountant()
     synthetic_rng, noise_rng = RNGStream(seed + 3, device), RNGStream(seed + 4, device)
     metadata = {
-        "experiment": "expv3", "seed": seed, "run_id": run_name, "method": spec["method"],
+        "experiment": config["experiment"], "seed": seed, "run_id": run_name, "method": spec["method"],
         "learning_rate": spec["learning_rate"], "fingerprint": fingerprint(config),
         "provenance": current_provenance, "device": str(device), "dataset": "MNIST",
         "model": "SimpleCNN", "noise_multiplier": sigma, "sample_rate": q,
@@ -763,7 +776,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         "synthetic_measurement_enabled": synthetic_measurement,
         "diagnostics_enabled": diagnostics, "beta_measurement_enabled": beta_measurement,
         "oracle_diagnostics_enabled": oracle_diagnostics,
-        "beta_algorithm_active": spec["method"] == FISHER_METHOD,
+        "beta_algorithm_active": spec.get("adaptive_beta", spec["method"] == FISHER_METHOD),
         "beta_update_rule": config["beta_update_rule"], "beta_window": config["beta_window"],
         "filter_position": "after global clipping and DP Gaussian noise",
         "synthetic_fisher_role": "measurement_only_for_dp_sgd" if spec["method"] == DP_METHOD else "training_filter_and_measurement",
@@ -774,8 +787,11 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         "deployable_beta_path_reads_clean_gradient": False,
         "oracle_path_separate_from_controller": True, "output": str(root),
     }
+    metadata.update(beta_algorithm_active=spec.get("adaptive_beta", spec["method"] == FISHER_METHOD),
+                    gamma_influences_training=spec.get("gamma", False))
     save_json(root / "metadata.json", metadata)
 
+    gamma, gamma_refreshes = None, []
     rows, layer_rows, beta_steps, refreshes = [], [], [], []
     failed_step_rows = []
     controller_rows, h_certificates = [], []
@@ -808,9 +824,10 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                 if refreshed:
                     if controller is not None and refresh_index > 0:
                         started_controller = time.perf_counter()
-                        previous = controller.finalize_all(interval_index=refresh_index - 1, apply=True)
+                        previous = controller.finalize_all(interval_index=refresh_index - 1,
+                                                           apply=spec.get("adaptive_beta", True))
                         refresh_controller_time += time.perf_counter() - started_controller
-                        current_beta_source_interval = refresh_index - 1
+                        current_beta_source_interval = refresh_index - 1 if spec.get("adaptive_beta", True) else None
                         source_interval = current_beta_source_interval
                         accepted = all(value["accepted"] for value in previous.values())
                         fallback = any(value["fallback"] for value in previous.values())
@@ -841,6 +858,10 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                             beta1_state, beta_by_layer,
                             (float(sigma) * float(config["max_grad_norm"]) / float(config["batch_size"])) ** 2,
                         )
+                        if spec.get("gamma", False):
+                            gamma, current_gamma_rows = experiment.refresh_gamma(
+                                active, beta_by_layer, step, refresh_index, spec)
+                            gamma_refreshes.extend(current_gamma_rows)
                     else:
                         active = beta1_state = None
                     sync(model)
@@ -913,7 +934,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                         diagnostic_state=diagnostic_state, active_beta=active_beta,
                         active_source=active_source, oracle_diagnostics=oracle_diagnostics,
                         on_dp_mechanism_executed=record_privacy,
-                        on_beta_observation=beta_steps.extend,
+                        on_beta_observation=beta_steps.extend, gamma=gamma, gamma_experiment=experiment,
                     )
                 except DivergenceError as exc:
                     if exc.stage not in VALID_DIVERGENCE_STAGES:
@@ -982,7 +1003,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     )
     end_to_end_dp_accounting_complete = (
         status == "completed" or divergence_stage in {
-            "noisy_gradient", "filtered_gradient", "parameters"
+            "noisy_gradient", "filtered_gradient", "compensated_gradient", "parameters"
         }
     )
     summary.update(
@@ -997,14 +1018,22 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     interval_rows = _enrich_intervals(
         interval_rows, spec["method"], refreshes, controller_rows, rows, config["K"]
     )
+    if not spec.get("adaptive_beta", True):
+        for row in interval_rows:
+            row.update(applied_to_training=False, was_used_by_next_interval=False, next_beta_train=None)
+        for row in controller_rows:
+            row["beta_algorithm_active"] = False
     try:
         _write_artifacts(
             root, config, spec, rows, layer_rows, refreshes, beta_steps,
             interval_rows, controller_rows, failed_step_rows,
             {"private": audits, "privacy": privacy_audits, "synthetic": synthetic_audits}, h_certificates,
+            extra_fields=() if experiment is None else experiment.GAMMA_FIELDS,
         )
     finally:
         model.remove_hooks()
+    if spec.get("gamma", False):
+        write_csv(root / "gamma_refresh_metrics.csv", gamma_refreshes)
     final = summary["final_accuracy"]
     suffix = f", accuracy={final:.4f}" if final is not None else ""
     print(f"{status} seed={seed} {run_name}: {step}/{total} steps{suffix}", flush=True)

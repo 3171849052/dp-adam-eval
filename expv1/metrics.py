@@ -70,14 +70,15 @@ def eigenbins(s, n, state):
 
 @torch.no_grad()
 def diagnose(model, noisy, active_state, diagnostic_state, method,
-             refresh=False, eigen_budget=None):
+             refresh=False, eigen_budget=None, filtered_gradients=None):
     base = getattr(model, '_module', model)
     layers, bins, all_values = [], [], []
     for name in LAYERS:
         layer = getattr(base, name)
         s = pack_layer_gradient(layer, 'summed_grad')
         y = noisy[name]
-        hat = pack_layer_gradient(layer)
+        hat = (pack_layer_gradient(layer) if filtered_gradients is None
+               else filtered_gradients[name])
         active = None if active_state is None else active_state[name]
         diagnostic = None if diagnostic_state is None else diagnostic_state[name]
         wg = apply_filter_to_copy(s, active, method)

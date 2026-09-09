@@ -1,0 +1,3 @@
+seed,run_id,gamma_min,gamma_max_observed,status,divergence_stage
+42,dp_fisher_wiener_beta1_gamma_lr0p50,1.0108058528962554,51766.983523626586,completed,
+42,dp_fisher_wiener_adaptive_beta_gamma_lr0p50,1.0003839115778517,51766.983523626586,completed,

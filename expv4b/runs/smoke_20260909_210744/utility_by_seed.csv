@@ -1,0 +1,4 @@
+seed,run_id,status,divergence_stage,accuracy_auc,final_accuracy,late_mean_accuracy,final_test_loss,T80,T85,T90
+42,dp_sgd_lr0p50,completed,,0.078125,0.1875,0.125,1722.8893814086914,,,
+42,dp_fisher_wiener_beta1_gamma_lr0p50,completed,,0.046875,0.0,0.0,164.8180809020996,,,
+42,dp_fisher_wiener_adaptive_beta_gamma_lr0p50,completed,,0.046875,0.0,0.0,346.789981842041,,,

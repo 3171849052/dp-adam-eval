@@ -278,12 +278,12 @@ def signal_amplitude_retention(signal_retention):
 
 def add_effective_step_metrics(row, learning_rate):
     """Add research-only effective-step fields; never feed them to training."""
-    amplitude = signal_amplitude_retention(row["signal_retention"])
+    amplitude = signal_amplitude_retention(row.get("signal_retention_after_gamma", row["signal_retention"]))
     row.update(
         learning_rate=float(learning_rate),
         signal_amplitude_retention=amplitude,
         effective_signal_lr=float(learning_rate) * amplitude,
-        optimizer_update_norm=float(learning_rate) * float(row["filtered_gradient_norm"]),
+        optimizer_update_norm=float(learning_rate) * float(row.get("compensated_gradient_norm", row["filtered_gradient_norm"])),
         clean_reference_update_norm=0.5 * float(row["clean_clipped_norm"]),
         lr_compensation_to_dp_sgd_0p5=0.5 / (amplitude + 1e-12),
     )

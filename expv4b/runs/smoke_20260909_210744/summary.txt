@@ -1,0 +1,29 @@
+Functional smoke only; no scientific conclusion.
+
+{
+  "comparison": "C-B",
+  "endpoint": "accuracy_auc",
+  "planned_pairs": 1,
+  "completed_pairs": 1,
+  "positive_pairs": 0,
+  "mean_paired_difference": 0.0,
+  "median_paired_difference": 0.0,
+  "smoke_functional_only": true
+}
+
+A/B/C utility (missing thresholds mean not reached; counts exclude missing/diverged endpoints):
+ seed                                      run_id    status divergence_stage  accuracy_auc  final_accuracy  late_mean_accuracy  final_test_loss  T80  T85  T90
+   42                               dp_sgd_lr0p50 completed             None      0.078125          0.1875               0.125      1722.889381  NaN  NaN  NaN
+   42         dp_fisher_wiener_beta1_gamma_lr0p50 completed             None      0.046875          0.0000               0.000       164.818081  NaN  NaN  NaN
+   42 dp_fisher_wiener_adaptive_beta_gamma_lr0p50 completed             None      0.046875          0.0000               0.000       346.789982  NaN  NaN  NaN
+
+Raw gamma ranges:
+ seed                                      run_id  gamma_min  gamma_max_observed    status divergence_stage
+   42         dp_fisher_wiener_beta1_gamma_lr0p50   1.010806        51766.983524 completed             None
+   42 dp_fisher_wiener_adaptive_beta_gamma_lr0p50   1.000384        51766.983524 completed             None
+
+Mechanism quantiles pool layer-step observations; overall is not a whole-model scalar gamma.
+The filtered metrics describe Wy before gamma. *_after_gamma describes the actual compensated update.
+Compare signal_retention_after_gamma and compensated_gradient_norm alongside cosine/SNR/relMSE
+to distinguish spectral filtering gains from update magnitude. See mechanism_summary.csv.
+Diverged arms retain diagnostics but have no completed primary endpoint; paired differences stay missing.

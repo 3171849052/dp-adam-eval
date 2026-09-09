@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "pairing_passed": true,
+  "runs": [
+    {
+      "seed": 42,
+      "run_id": "dp_sgd_lr0p50",
+      "status": "completed",
+      "divergence_stage": null
+    },
+    {
+      "seed": 42,
+      "run_id": "dp_fisher_wiener_beta1_gamma_lr0p50",
+      "status": "completed",
+      "divergence_stage": null
+    },
+    {
+      "seed": 42,
+      "run_id": "dp_fisher_wiener_adaptive_beta_gamma_lr0p50",
+      "status": "completed",
+      "divergence_stage": null
+    }
+  ]
+}
