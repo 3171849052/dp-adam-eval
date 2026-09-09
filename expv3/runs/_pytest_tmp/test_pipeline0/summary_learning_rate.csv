@@ -1,0 +1,4 @@
+method,learning_rate,n_runs,final_accuracy_mean,final_accuracy_sd,accuracy_auc_mean,accuracy_auc_sd,late_mean_accuracy_mean,late_mean_accuracy_sd,final_test_loss_mean,final_test_loss_sd,number_diverged,median_fallback_rate,median_beta_train,median_effective_signal_lr
+dp_fisher_wiener_adaptive_beta,0.5,1,0.125,,0.11979166666666667,,0.125,,5.336099401116371,,0,0.25,211.8943084073429,0.0107950444818836
+dp_fisher_wiener_adaptive_beta,1.0,1,0.125,,0.109375,,0.125,,17.688818991184235,,0,0.25,211.87298952117345,0.03899615969451735
+dp_fisher_wiener_adaptive_beta,5.0,1,0.15625,,0.15625,,0.15625,,2137.4813537597656,,0,0.25,211.86552464745705,1.0792983173428345

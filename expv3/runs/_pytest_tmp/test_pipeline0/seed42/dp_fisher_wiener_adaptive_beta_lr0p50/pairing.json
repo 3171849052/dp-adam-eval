@@ -1,0 +1,74 @@
+{
+  "private": [
+    {
+      "step": 0,
+      "batch_indices": [
+        15,
+        8,
+        13,
+        0
+      ],
+      "model_hash": "26a598b12d795f22d7a466c9557b3916675260b3e3b3493ae2b185c52edfb668",
+      "parameters_finite": true,
+      "noise_rng_before": "2cda5d401032e9daa8fe04dfd4ebde0036a9d5ae819d8a5c9e7c82c2e5ec9bd4",
+      "noise_rng_after": "7806d8d13d8f3455db7ccb61b359643bbd82fa3ae461da69911e9da79efc6269"
+    },
+    {
+      "step": 1,
+      "batch_indices": [
+        4,
+        6,
+        2,
+        1
+      ],
+      "model_hash": "fb9ca401d5057dbffc1c90bab06f346f9f895b36d3db381cd98660a35e57c195",
+      "parameters_finite": true,
+      "noise_rng_before": "7806d8d13d8f3455db7ccb61b359643bbd82fa3ae461da69911e9da79efc6269",
+      "noise_rng_after": "15344baaea9db8170e8ab7b7e1312eb6f9d6266daa541dbc9c1df39b51ba999c"
+    },
+    {
+      "step": 2,
+      "batch_indices": [
+        11,
+        10,
+        9,
+        3
+      ],
+      "model_hash": "90cf30d06e355b739b791c16d61adb187d8412e7fabf3c2b32b8bcdefca2380e",
+      "parameters_finite": true,
+      "noise_rng_before": "15344baaea9db8170e8ab7b7e1312eb6f9d6266daa541dbc9c1df39b51ba999c",
+      "noise_rng_after": "4929ef76be48c866a412e43779728d506abb1c1455cad8e9cdfc49e5eb6dc73b"
+    },
+    {
+      "step": 3,
+      "batch_indices": [
+        7,
+        14,
+        12,
+        5
+      ],
+      "model_hash": "797d5f0fceec34cf2d2f331f096c16a0d5ffdd43bd275064300a60e140f4702e",
+      "parameters_finite": true,
+      "noise_rng_before": "4929ef76be48c866a412e43779728d506abb1c1455cad8e9cdfc49e5eb6dc73b",
+      "noise_rng_after": "222b6d79603f06b85957e0a943a73666c52d2a769f7b9e69780b36fc7faf590c"
+    }
+  ],
+  "synthetic": [
+    {
+      "step": 0,
+      "rng_before": "e4d4dfc191a90b6dfed6139b01caf3dcd28b59d3be22ac3a1d0212d32438d844",
+      "rng_after": "71d2fd93f90e66b8fb895b16ec0956995082e5c8dba4a58a30b01a6dc9044988",
+      "samples_hash": "bfbf6c61d32621327a700f6b91da7240c8a6b4e7db078cf486333215e461b3e3",
+      "labels_hash": "4c94275096950eb5c256f4b1bc5abc3044e0454a058b8309659425b3664eef57",
+      "count": 8
+    },
+    {
+      "step": 2,
+      "rng_before": "71d2fd93f90e66b8fb895b16ec0956995082e5c8dba4a58a30b01a6dc9044988",
+      "rng_after": "aa82bb4951c7b919f47b961c777a07e6ae2ae0a6a3a41b0b5f2019321acf0cfc",
+      "samples_hash": "793a9500327ff253743fe2c8a14d1af9a12f7165b6cacb1d14ee3f9f8688a8ae",
+      "labels_hash": "2e268e3a83e52cc819533fa8898996fa57e8828f5438ac1a65bef2a507101001",
+      "count": 8
+    }
+  ]
+}

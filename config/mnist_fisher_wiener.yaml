@@ -12,7 +12,7 @@ data:
   num_workers: 0
 training:
   epochs: 5
-  learning_rate: 3
+  learning_rate: 6
   optimizer: sgd
   momentum: 0.0
   weight_decay: 0.0

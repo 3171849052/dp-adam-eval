@@ -7,7 +7,7 @@ fi
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="${PYTHON:-python}"
-DEFAULT_CONFIG="${DEFAULT_CONFIG:-$ROOT/config/mnist_dpsgd.yaml}"
+DEFAULT_CONFIG="${DEFAULT_CONFIG:-$ROOT/config/mnist_fisher_wiener.yaml}"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [[ $# -eq 1 && ( $1 == "--help" || $1 == "-h" ) ]]; then

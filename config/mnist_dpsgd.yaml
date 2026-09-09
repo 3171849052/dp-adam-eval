@@ -12,7 +12,7 @@ data:
   num_workers: 0
 training:
   epochs: 5
-  learning_rate: 1
+  learning_rate: 0.3
   optimizer: sgd
   momentum: 0.0
   weight_decay: 0.0
@@ -32,7 +32,7 @@ wiener:
   synthetic_distribution: pink_noise
 runtime:
   device: auto
-  gpu: 1
+  gpu: 0
   threads: 4
   deterministic: true
 output:

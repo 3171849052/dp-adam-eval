@@ -1,0 +1,30 @@
+{
+  "experiment": "expv3",
+  "primary_comparison": "adaptive beta Fisher-Wiener lr=0.5 vs DP-SGD lr=0.5",
+  "fisher_learning_rates": [
+    0.5,
+    1.0,
+    5.0
+  ],
+  "one_interval_lag": true,
+  "hold_last_positive": true,
+  "no_success_thresholds": true,
+  "contains_non_dp_oracle": true,
+  "release_safe_under_dp": false,
+  "deployable_beta_controller_is_postprocessing": true,
+  "oracle_is_research_only": true,
+  "interpretation_cases": {
+    "A": "adaptive 0.5 exceeds DP-SGD 0.5 in utility",
+    "B": "adaptive 0.5 trails but 1 or 5 recovers utility",
+    "C": "utility improves through 5 without divergence; the upper boundary is not an optimum",
+    "D": "5 diverges and 1 is best; the stability/utility region is partially bracketed",
+    "E": "denoising improves while utility falls, separating Wiener MSE from optimization utility",
+    "F": "high fallback, especially in early layers, indicates online observability limits"
+  },
+  "runs": [
+    "seed42/dp_sgd_lr0p50",
+    "seed42/dp_fisher_wiener_adaptive_beta_lr0p50",
+    "seed42/dp_fisher_wiener_adaptive_beta_lr1p00",
+    "seed42/dp_fisher_wiener_adaptive_beta_lr5p00"
+  ]
+}
