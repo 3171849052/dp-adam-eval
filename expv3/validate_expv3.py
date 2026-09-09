@@ -377,7 +377,7 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
     assert summary["oracle_path_separate_from_controller"] is True
     assert meta["accounted_dp_mechanisms_valid"] == summary["accounted_dp_mechanisms_valid"] is True
     expected_complete = summary["status"] == "completed" or summary.get("divergence_stage") in {
-        "noisy_gradient", "filtered_gradient", "optimizer_exception", "parameters"
+        "noisy_gradient", "filtered_gradient", "parameters"
     }
     assert meta["end_to_end_dp_accounting_complete"] == summary["end_to_end_dp_accounting_complete"]
     assert summary["end_to_end_dp_accounting_complete"] is expected_complete
@@ -409,9 +409,9 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
         assert stage is None and privacy == completed == total
     else:
         assert completed == summary["diverged_step"] < total
-        assert stage in ("loss", "noisy_gradient", "filtered_gradient", "optimizer_exception", "parameters")
+        assert stage in ("loss", "noisy_gradient", "filtered_gradient", "parameters")
         assert privacy == completed + int(stage != "loss")
-    expected_observations = completed + int(stage in ("filtered_gradient", "optimizer_exception", "parameters"))
+    expected_observations = completed + int(stage in ("filtered_gradient", "parameters"))
     assert observations == (expected_observations if beta_measurement_enabled else 0)
     assert 0 <= observations <= privacy <= total
     assert [row["step"] for row in pairing["privacy"]] == list(range(privacy))
@@ -425,8 +425,7 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
         if index:
             assert event["noise_rng_before"] == pairing["privacy"][index-1]["noise_rng_after"]
     assert all(row["parameters_finite"] for row in pairing["private"])
-    if stage != "optimizer_exception":
-        assert summary["parameters_finite"] is (stage != "parameters")
+    assert summary["parameters_finite"] is (stage != "parameters")
     if status == "completed" and completed:
         assert summary["final_model_hash"] == pairing["private"][-1]["model_hash"]
     frames = {name: pd.read_csv(root / f"{name}.csv") for name in (
@@ -442,6 +441,13 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
                          method=spec["method"], controller=controller,
                          oracle_enabled=oracle_enabled,
                          measurement_enabled=beta_measurement_enabled)
+    beta_valid_by_step = {
+        int(step_value): all(_bool(value) for value in group.diagnostic_valid)
+        for step_value, group in beta_step.groupby("step")
+    }
+    for _, row in train.iterrows():
+        expected_beta_finite = beta_valid_by_step.get(int(row.step), True)
+        assert _bool(row.beta_diagnostics_finite) is expected_beta_finite
     if beta_measurement_enabled:
         _validate_intervals(config, beta_step, interval, spec["method"], train)
     else:
@@ -467,7 +473,7 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
         assert failed.dp_mechanism_executed.map(_bool).all()
         expected_observation_recorded = (
             beta_measurement_enabled
-            and stage in ("filtered_gradient", "optimizer_exception", "parameters")
+            and stage in ("filtered_gradient", "parameters")
         )
         assert failed.beta_observation_recorded.map(_bool).eq(expected_observation_recorded).all()
     assert beta_step.dp_observation_recorded.map(_bool).all()
@@ -528,6 +534,16 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
                        + failed.beta_controller_time.sum())
     assert math.isclose(summary["total_beta_controller_time"], controller_time, rel_tol=1e-6, abs_tol=1e-10)
     filter_time = train.wiener_filter_time.sum() + failed.wiener_filter_time.sum()
+    filter_attempts = completed
+    if spec["method"] == FISHER_METHOD and stage in {
+        "filtered_gradient", "parameters"
+    }:
+        filter_attempts += 1
+    expected_mean_filter_time = (
+        float(filter_time) / filter_attempts if filter_attempts > 0 else 0.0
+    )
+    assert math.isclose(summary["mean_wiener_filter_time"], expected_mean_filter_time,
+                        rel_tol=1e-6, abs_tol=1e-10)
     spectrum_time = refresh.diagnostic_spectrum_time.sum()
     assert math.isclose(summary["total_wiener_filter_time"], filter_time,
                         rel_tol=1e-6, abs_tol=1e-10)

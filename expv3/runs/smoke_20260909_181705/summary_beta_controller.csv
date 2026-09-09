@@ -1,0 +1,17 @@
+seed,run_id,status,completed_steps,metric_scope,method,learning_rate,layer,number_of_intervals,median_beta_train,mean_beta_train,median_beta_raw,raw_negative_rate,fallback_rate,accepted_update_rate,median_beta_train_to_oracle_ratio,median_lag_log_error,median_observability_snr
+42,dp_sgd_lr0p50,completed,4,full,dp_sgd,0.5,conv1,2,,,-449.14016769419186,1.0,,,,,0.0100049135526262
+42,dp_sgd_lr0p50,completed,4,full,dp_sgd,0.5,conv2,2,,,3197.1956238853563,0.0,,,,,0.0020556362189784
+42,dp_sgd_lr0p50,completed,4,full,dp_sgd,0.5,fc1,2,,,133.06491657030094,0.0,,,,,0.00054481216073585
+42,dp_sgd_lr0p50,completed,4,full,dp_sgd,0.5,fc2,2,,,50.31326687988287,0.0,,,,,0.00369750243833115
+42,dp_fisher_wiener_adaptive_beta_lr0p50,completed,4,full,dp_fisher_wiener_adaptive_beta,0.5,conv1,2,1.0,1.0,-3107.7290174776017,1.0,1.0,0.0,0.49401969908546794,,0.00037749985672182846
+42,dp_fisher_wiener_adaptive_beta_lr0p50,completed,4,full,dp_fisher_wiener_adaptive_beta,0.5,conv2,2,3212.8466644039177,3212.8466644039177,3353.9892991041825,0.0,0.0,1.0,588.087047078728,3.070294580381092,0.00075728242332465
+42,dp_fisher_wiener_adaptive_beta_lr0p50,completed,4,full,dp_fisher_wiener_adaptive_beta,0.5,fc1,2,133.82023613573904,133.82023613573904,192.09826080431398,0.0,0.0,1.0,213.47901586274415,2.6266306414954954,0.0010905098625899
+42,dp_fisher_wiener_adaptive_beta_lr0p50,completed,4,full,dp_fisher_wiener_adaptive_beta,0.5,fc2,2,51.78010651695236,51.78010651695236,64.57891693250026,0.0,0.0,1.0,111.74388865882794,2.340460488995893,0.0039255676982793
+42,dp_fisher_wiener_adaptive_beta_lr1p00,completed,4,full,dp_fisher_wiener_adaptive_beta,1.0,conv1,2,1.0,1.0,-2998.7849712999896,1.0,1.0,0.0,0.4591195775195351,,0.0013035243082189759
+42,dp_fisher_wiener_adaptive_beta_lr1p00,completed,4,full,dp_fisher_wiener_adaptive_beta,1.0,conv2,2,3215.9963221191683,3215.9963221191683,3373.8239632615073,0.0,0.0,1.0,462.57698490856035,2.9659860447651196,0.0009060121698254
+42,dp_fisher_wiener_adaptive_beta_lr1p00,completed,4,full,dp_fisher_wiener_adaptive_beta,1.0,fc1,2,133.81873427343302,133.81873427343302,191.56416099976389,0.0,0.0,1.0,229.20190873859016,2.6576035005260747,0.00102628548481695
+42,dp_fisher_wiener_adaptive_beta_lr1p00,completed,4,full,dp_fisher_wiener_adaptive_beta,1.0,fc2,2,51.93466763418945,51.93466763418945,56.734860712847095,0.0,0.0,1.0,166.8850390600384,2.518766029773314,0.0062236228747738
+42,dp_fisher_wiener_adaptive_beta_lr5p00,completed,4,full,dp_fisher_wiener_adaptive_beta,5.0,conv1,2,1.0,1.0,-2473.194486511893,1.0,1.0,0.0,0.17024474958896443,,0.015272312185255049
+42,dp_fisher_wiener_adaptive_beta_lr5p00,completed,4,full,dp_fisher_wiener_adaptive_beta,5.0,conv2,2,3210.472383036682,3210.472383036682,3370.476242858003,0.0,0.0,1.0,299.695024486164,2.7775372874659348,0.00161786589976485
+42,dp_fisher_wiener_adaptive_beta_lr5p00,completed,4,full,dp_fisher_wiener_adaptive_beta,5.0,fc1,2,133.7127652526214,133.7127652526214,183.8682403743931,0.0,0.0,1.0,696.3711049827548,3.142199955301492,0.0005100825645121001
+42,dp_fisher_wiener_adaptive_beta_lr5p00,completed,4,full,dp_fisher_wiener_adaptive_beta,5.0,fc2,2,52.59778164756346,52.59778164756346,52.3592147115244,0.0,0.0,1.0,2183.718302303606,3.6400869818395347,0.01056184933621775

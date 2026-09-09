@@ -132,8 +132,7 @@ def test_noisy_gradient_divergence_consumes_privacy_step(config, tiny_data, tmp_
     report_stage(summary)
 
 
-@pytest.mark.parametrize('stage', ['parameters', 'optimizer_exception'])
-def test_optimizer_divergence_preserves_consumed_events(config, tiny_data, tmp_path, monkeypatch, stage):
+def test_parameter_divergence_preserves_consumed_events(config, tiny_data, tmp_path, monkeypatch):
     original = trainer.make_optimizer
     def make(*args):
         optimizer = original(*args)
@@ -141,8 +140,6 @@ def test_optimizer_divergence_preserves_consumed_events(config, tiny_data, tmp_p
         calls = 0
         def fail():
             nonlocal calls
-            if calls == 2 and stage == 'optimizer_exception':
-                raise RuntimeError('injected optimizer failure')
             update()
             if calls == 2:
                 with torch.no_grad():
@@ -152,11 +149,27 @@ def test_optimizer_divergence_preserves_consumed_events(config, tiny_data, tmp_p
         return optimizer
     monkeypatch.setattr(trainer, 'make_optimizer', make)
     summary = trainer.train(config, 42, RUN, tmp_path, tiny_data)
-    assert summary['divergence_stage'] == stage
+    assert summary['divergence_stage'] == 'parameters'
     assert summary['completed_steps'] == 2
     assert summary['privacy_steps'] == summary['beta_observation_steps'] == 3
-    assert summary['parameters_finite'] is (stage != 'parameters')
+    assert summary['parameters_finite'] is False
     validate_one(config, tmp_path / 'seed42' / RUN)
+
+
+def test_unexpected_optimizer_exception_propagates(config, tiny_data, tmp_path, monkeypatch):
+    original = torch.optim.SGD.step
+    calls = 0
+
+    def fail(optimizer, *args, **kwargs):
+        nonlocal calls
+        if calls == 2:
+            raise RuntimeError('injected optimizer failure')
+        calls += 1
+        return original(optimizer, *args, **kwargs)
+
+    monkeypatch.setattr(torch.optim.SGD, 'step', fail)
+    with pytest.raises(RuntimeError, match='injected optimizer failure'):
+        trainer.train(config, 42, RUN, tmp_path, tiny_data)
 
 
 def test_dp_sgd_synthetic_measurement_training_isolation(config, tiny_data, tmp_path, monkeypatch):

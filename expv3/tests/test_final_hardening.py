@@ -87,6 +87,28 @@ def test_filtered_divergence_runtime_includes_failed_step(config, tiny_data, tmp
     _validate_one(config, root)
 
 
+def test_mean_wiener_filter_time_includes_failed_filter_attempt(config, tiny_data, tmp_path, monkeypatch):
+    original = trainer.apply_fisher_wiener
+    calls = 0
+
+    def fail(model, active):
+        nonlocal calls
+        original(model, active)
+        if calls == config["K"]:
+            next(model.parameters()).grad.fill_(float("nan"))
+        calls += 1
+
+    monkeypatch.setattr(trainer, "apply_fisher_wiener", fail)
+    summary = trainer.train(config, 42, RUN, tmp_path, tiny_data)
+    root = tmp_path / "seed42" / RUN
+    train = pd.read_csv(root / "train_metrics.csv")
+    failed = pd.read_csv(root / "failed_step_metrics.csv")
+    attempts = int(summary["completed_steps"]) + 1
+    total_filter_time = train.wiener_filter_time.sum() + failed.wiener_filter_time.sum()
+    assert summary["mean_wiener_filter_time"] == pytest.approx(total_filter_time / attempts)
+    _validate_one(config, root)
+
+
 def test_loss_divergence_has_no_failed_private_timing_row(config, tiny_data, tmp_path, monkeypatch):
     root = _loss_divergence(config, tiny_data, tmp_path, monkeypatch)
     failed = pd.read_csv(root / "failed_step_metrics.csv")
@@ -94,7 +116,7 @@ def test_loss_divergence_has_no_failed_private_timing_row(config, tiny_data, tmp
     assert list(failed.columns)[:len(trainer.FAILED_STEP_FIELDS)] == trainer.FAILED_STEP_FIELDS
 
 
-def test_oracle_disabled_preserves_deployable_interval_artifact(config, tiny_data, tmp_path):
+def test_oracle_disabled_beta_finite_semantics_consistent(config, tiny_data, tmp_path):
     trainer.train(config, 42, RUN, tmp_path / "oracle", tiny_data, oracle_diagnostics=True)
     off = trainer.train(config, 42, RUN, tmp_path / "off", tiny_data,
                         oracle_diagnostics=False)
@@ -105,6 +127,10 @@ def test_oracle_disabled_preserves_deployable_interval_artifact(config, tiny_dat
     assert intervals.beta_dp_raw.notna().all()
     assert intervals.beta_oracle.isna().all()
     assert off["final_model_hash"] == json.loads((normal_root / "summary.json").read_text())["final_model_hash"]
+    steps = pd.read_csv(off_root / "beta_step_metrics.csv")
+    train = pd.read_csv(off_root / "train_metrics.csv")
+    expected = steps.groupby("step").diagnostic_valid.all()
+    assert train.set_index("step").beta_diagnostics_finite.to_dict() == expected.to_dict()
     _validate_one(config, off_root)
 
 
@@ -155,6 +181,41 @@ def test_beta_train_oracle_ratio_uses_current_interval_oracle():
     assert result.loc[result.interval_index == 1, "ratio"].iloc[0] == pytest.approx(2.)
 
 
+def test_beta_raw_oracle_ratio_keeps_layers_separate():
+    frame = pd.DataFrame({
+        "seed": [1, 2, 1, 2], "learning_rate": [.5] * 4,
+        "layer": ["conv1", "conv1", "conv2", "conv2"],
+        "interval_index": [0] * 4,
+        "beta_dp_raw": [2., 4., 20., 40.],
+        "beta_oracle": [1., 1., 1., 1.],
+    })
+    result = plotting.aggregate_beta_raw_oracle_ratio([frame])
+    values = result.set_index("layer")["median"]
+    assert values["conv1"] == pytest.approx(3.)
+    assert values["conv2"] == pytest.approx(30.)
+
+
+def test_mechanism_plot_uses_equal_seed_weight():
+    frames = [pd.DataFrame({
+        "seed": [1, 2, 2, 2], "learning_rate": [.5] * 4,
+        "layer": ["conv1"] * 4, "signal_retention": [0., 10., 10., 10.],
+    })]
+    result = plotting.aggregate_seed_equal_metric(frames, "signal_retention")
+    assert result.loc[0, "median"] == pytest.approx(5.)
+
+
+def test_fallback_plot_uses_equal_seed_weight():
+    frames = [pd.DataFrame({
+        "seed": [1, 2, 2, 2], "learning_rate": [.5] * 4,
+        "layer": ["conv1"] * 4, "interval_index": [1] * 4,
+        "beta_fallback_used": [False, True, True, True],
+    })]
+    result = plotting.aggregate_seed_equal_rate(
+        frames, "beta_fallback_used", exclude_initial_interval=True
+    )
+    assert result.loc[0, "median"] == pytest.approx(.5)
+
+
 def test_h_adaptive_vs_beta1_uses_counterfactual_field():
     controller = pd.DataFrame({
         "layer": ["fc2", "fc2"], "H_q50": [.1, .1],
@@ -181,9 +242,12 @@ def test_lr_summary_reports_completed_denominator(config, tiny_data, tmp_path):
         trainer.train(config, 42, spec["run_id"], tmp_path, tiny_data)
     summarize(config, tmp_path, tmp_path, require_tests=False)
     frame = pd.read_csv(tmp_path / "summary_learning_rate.csv")
-    assert {"n_runs", "n_completed", "n_diverged", "utility_aggregate_scope"} <= set(frame)
+    assert {"n_runs", "n_completed", "n_diverged", "utility_aggregate_scope",
+            "mechanism_aggregate_scope", "median_fallback_rate_completed",
+            "median_beta_train_completed", "median_effective_signal_lr_completed"} <= set(frame)
     assert (frame.n_runs == frame.n_completed + frame.n_diverged).all()
     assert frame.utility_aggregate_scope.eq("completed_only").all()
+    assert frame.mechanism_aggregate_scope.eq("all_observed_seed_level").all()
     assert frame.final_accuracy_mean.equals(frame.final_accuracy_mean_completed)
 
 

@@ -75,6 +75,7 @@ TRAIN_FIELDS = [
     "diagnostics_finite", "beta_diagnostics_finite",
     "oracle_diagnostics_finite", "oracle_diagnostic_error",
 ]
+VALID_DIVERGENCE_STAGES = {"loss", "noisy_gradient", "filtered_gradient", "parameters"}
 LAYER_FIELDS = [
     "seed", "run_id", "method", "config_fingerprint", "step", "layer", "learning_rate",
     "clean_clipped_norm", "actual_noise_norm", "noisy_gradient_norm", "filtered_gradient_norm",
@@ -417,19 +418,7 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
             ),
         )
 
-    try:
-        optimizer.step()
-    except Exception as exc:
-        raise DivergenceError(
-            step, "optimizer_exception",
-            _partial_timing_snapshot(
-                beta_observation_seconds=beta_observation_seconds,
-                controller_seconds=controller_seconds,
-                oracle_seconds=oracle_seconds,
-                reconstruction_seconds=reconstruction_seconds,
-                filter_time=filter_time,
-            ),
-        ) from exc
+    optimizer.step()
     if not all_finite(model.parameters()):
         raise DivergenceError(
             step, "parameters",
@@ -470,10 +459,7 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
                 beta_observation_time=beta_observation_seconds,
                 oracle_diagnostic_time=oracle_seconds,
                 reconstruction_diagnostic_time=reconstruction_seconds)
-    rows["beta_diagnostics_finite"] = (
-        all(beta_estimation.beta_step_diagnostic_is_finite(row) for row in beta_rows)
-        if beta_measurement else True
-    )
+    rows["beta_diagnostics_finite"] = all(row["diagnostic_valid"] for row in beta_rows)
     return (rows, layer_rows, beta_rows, audit,
             reconstruction_seconds + oracle_seconds, controller_seconds)
 
@@ -492,7 +478,8 @@ class Indexed(Dataset):
 
 def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall,
              diagnostic_seconds, controller_seconds, active, status, diverged_step,
-             oracle_diagnostics=True, beta_measurement=True, failed_step_rows=None):
+             oracle_diagnostics=True, beta_measurement=True, failed_step_rows=None,
+             divergence_stage=None):
     evaluations = [row for row in rows if row.get("test_accuracy") is not None]
     finite_evaluations = [row for row in evaluations if value_finite(row.get("test_accuracy"))]
     accuracies = [float(row["test_accuracy"]) for row in finite_evaluations]
@@ -531,6 +518,11 @@ def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall
     successful_filter = sum(float(row.get("wiener_filter_time", 0.0)) for row in rows)
     failed_filter = sum(float(row.get("wiener_filter_time", 0.0)) for row in failed_step_rows)
     filter_time = successful_filter + failed_filter
+    filter_attempts = step
+    if spec["method"] == FISHER_METHOD and divergence_stage in {
+        "filtered_gradient", "parameters"
+    }:
+        filter_attempts += 1
     total_controller_time = sum(float(row.get("beta_controller_time", 0.0)) for row in rows)
     total_controller_time += sum(float(row.get("beta_controller_time", 0.0))
                                  for row in failed_step_rows)
@@ -577,7 +569,7 @@ def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall
         "total_diagnostic_spectrum_time": spectrum,
         "number_of_refreshes": len(refreshes),
         "mean_refresh_time": total_refresh / len(refreshes) if refreshes else 0.0,
-        "mean_wiener_filter_time": filter_time / max(step, 1),
+        "mean_wiener_filter_time": filter_time / filter_attempts if filter_attempts > 0 else 0.0,
         "diagnostics_all_finite": all(row.get("diagnostics_finite", True) for row in rows),
         "beta_diagnostics_all_finite": all(row.get("beta_diagnostics_finite", True) for row in rows),
         "beta_diagnostic_nonfinite_steps": sorted({int(row["step"]) for row in rows if not row.get("beta_diagnostics_finite", True)}),
@@ -924,6 +916,8 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                         on_beta_observation=beta_steps.extend,
                     )
                 except DivergenceError as exc:
+                    if exc.stage not in VALID_DIVERGENCE_STAGES:
+                        raise
                     status, diverged_step, divergence_stage = "diverged", exc.step, exc.stage
                     if exc.stage != "loss":
                         failed_step_rows.append({
@@ -968,6 +962,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         diagnostic_seconds, controller_seconds_total, active, status, diverged_step,
         oracle_diagnostics=oracle_diagnostics, beta_measurement=beta_measurement,
         failed_step_rows=failed_step_rows,
+        divergence_stage=divergence_stage,
     )
     summary.update(
         planned_privacy_steps=total, privacy_steps=privacy_steps,
@@ -987,7 +982,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     )
     end_to_end_dp_accounting_complete = (
         status == "completed" or divergence_stage in {
-            "noisy_gradient", "filtered_gradient", "optimizer_exception", "parameters"
+            "noisy_gradient", "filtered_gradient", "parameters"
         }
     )
     summary.update(

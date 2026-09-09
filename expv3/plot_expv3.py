@@ -85,6 +85,42 @@ def beta_train_oracle_ratio(controller, intervals):
     return result.reset_index(drop=True)
 
 
+def aggregate_beta_raw_oracle_ratio(frames):
+    """Aggregate positive raw/oracle beta ratios by LR and layer.
+
+    Each seed contributes one statistic for every LR/layer/interval cell before
+    the across-seed median is taken.  This keeps layers and learning rates
+    independent and prevents uneven row counts from changing their weight.
+    """
+    keys = ["seed", "learning_rate", "layer", "interval_index"]
+    output_keys = ["learning_rate", "layer", "interval_index"]
+    parts = []
+    for frame in frames:
+        if not set(keys + ["beta_dp_raw", "beta_oracle"]) <= set(frame.columns):
+            continue
+        raw = pd.to_numeric(frame["beta_dp_raw"], errors="coerce")
+        oracle = pd.to_numeric(frame["beta_oracle"], errors="coerce")
+        raw_numeric = raw.to_numpy(dtype=float)
+        oracle_numeric = oracle.to_numpy(dtype=float)
+        mask = (
+            raw.notna() & oracle.notna()
+            & np.isfinite(raw_numeric) & np.isfinite(oracle_numeric)
+            & raw.gt(0) & oracle.gt(0)
+        )
+        if mask.any():
+            part = frame.loc[mask, keys].copy()
+            part["ratio"] = (raw.loc[mask] / oracle.loc[mask]).astype(float)
+            parts.append(part)
+    if not parts:
+        return pd.DataFrame(columns=output_keys + ["median", "count"])
+    combined = pd.concat(parts, ignore_index=True)
+    seed_level = combined.groupby(keys, as_index=False).ratio.median()
+    result = seed_level.groupby(output_keys, as_index=False).ratio.agg(
+        median="median", count="count"
+    )
+    return result.sort_values(output_keys).reset_index(drop=True)
+
+
 def aggregate_h_q50(controller):
     """Aggregate actual and beta=1 counterfactual H statistics by layer."""
     required = {"layer", "H_q50", "H_beta1_q50"}
@@ -102,9 +138,13 @@ def aggregate_h_q50(controller):
 
 
 def _aggregate_interval_ratio(frames, numerator, denominator):
+    """Compatibility wrapper for positive interval ratios."""
+    if numerator == "beta_dp_raw" and denominator == "beta_oracle":
+        return aggregate_beta_raw_oracle_ratio(frames)
     parts = []
+    keys = ["seed", "learning_rate", "layer", "interval_index"]
     for frame in frames:
-        if numerator not in frame or denominator not in frame:
+        if not set(keys + [numerator, denominator]) <= set(frame.columns):
             continue
         left = pd.to_numeric(frame[numerator], errors="coerce")
         right = pd.to_numeric(frame[denominator], errors="coerce")
@@ -114,17 +154,69 @@ def _aggregate_interval_ratio(frames, numerator, denominator):
             & left.gt(0) & right.gt(0)
         )
         if mask.any():
-            parts.append(pd.DataFrame({
-                "interval_index": frame.loc[mask, "interval_index"].astype(int),
-                "ratio": (left.loc[mask] / right.loc[mask]).astype(float),
-            }))
+            part = frame.loc[mask, keys].copy()
+            part["ratio"] = (left.loc[mask] / right.loc[mask]).astype(float)
+            parts.append(part)
     if not parts:
-        return pd.DataFrame(columns=["interval_index", "median", "count"])
+        return pd.DataFrame(columns=["learning_rate", "layer", "interval_index", "median", "count"])
     combined = pd.concat(parts, ignore_index=True)
-    result = combined.groupby("interval_index", as_index=False).ratio.agg(
+    seed_level = combined.groupby(keys, as_index=False).ratio.median()
+    result = seed_level.groupby(keys[1:], as_index=False).ratio.agg(
         median="median", count="count"
     )
-    return result.sort_values("interval_index").reset_index(drop=True)
+    return result.sort_values(keys[1:]).reset_index(drop=True)
+
+
+def aggregate_seed_equal_metric(frames, metric):
+    """Median a metric within each seed, then median those seed statistics."""
+    keys = ["seed", "learning_rate", "layer"]
+    parts = []
+    for frame in frames:
+        if not set(keys + [metric]) <= set(frame.columns):
+            continue
+        values = pd.to_numeric(frame[metric], errors="coerce")
+        numeric = values.to_numpy(dtype=float)
+        mask = values.notna() & np.isfinite(numeric)
+        if mask.any():
+            part = frame.loc[mask, keys].copy()
+            part["value"] = values.loc[mask].astype(float)
+            parts.append(part)
+    if not parts:
+        return pd.DataFrame(columns=["learning_rate", "layer", "median", "count"])
+    combined = pd.concat(parts, ignore_index=True)
+    seed_level = combined.groupby(keys, as_index=False).value.median()
+    result = seed_level.groupby(keys[1:], as_index=False).value.agg(
+        median="median", count="count"
+    )
+    return result.sort_values(keys[1:]).reset_index(drop=True)
+
+
+def aggregate_seed_equal_rate(frames, metric, *, exclude_initial_interval=False):
+    """Median a per-seed boolean rate, then median across seeds."""
+    keys = ["seed", "learning_rate", "layer"]
+    parts = []
+    for frame in frames:
+        if not set(keys + [metric]) <= set(frame.columns):
+            continue
+        values = frame[metric].map({True: 1.0, False: 0.0, "True": 1.0, "False": 0.0,
+                                   "true": 1.0, "false": 0.0})
+        valid = values.notna()
+        if exclude_initial_interval:
+            if "interval_index" not in frame:
+                continue
+            valid &= pd.to_numeric(frame["interval_index"], errors="coerce").gt(0)
+        if valid.any():
+            part = frame.loc[valid, keys].copy()
+            part["value"] = values.loc[valid].astype(float)
+            parts.append(part)
+    if not parts:
+        return pd.DataFrame(columns=["learning_rate", "layer", "median", "count"])
+    combined = pd.concat(parts, ignore_index=True)
+    seed_level = combined.groupby(keys, as_index=False).value.mean()
+    result = seed_level.groupby(keys[1:], as_index=False).value.agg(
+        median="median", count="count"
+    )
+    return result.sort_values(keys[1:]).reset_index(drop=True)
 
 
 def _plot_aggregate(result, x, y, label, fill=True):
@@ -213,13 +305,12 @@ def plot(config, runs, output, require_tests=True):
     for spec in specs:
         if spec["method"] != FISHER_METHOD:
             continue
-        values = pd.concat([controller_frames[(seed, spec["run_id"])] for seed in config["seeds"]],
-                           ignore_index=True)
-        values = values[values.interval_index > 0]
-        rates = values.groupby("layer").beta_fallback_used.apply(
-            lambda x: (x.astype(str).str.lower() == "true").mean()
+        frames = [controller_frames[(seed, spec["run_id"])] for seed in config["seeds"]]
+        rates = aggregate_seed_equal_rate(
+            frames, "beta_fallback_used", exclude_initial_interval=True
         )
-        plt.plot(list(rates.index), rates.values, marker="o", label=f"lr={spec['learning_rate']:.2f}")
+        part = rates[rates.learning_rate == spec["learning_rate"]]
+        _plot_aggregate(part, "layer", "median", label(spec), fill=False)
     plt.ylabel("Fallback rate"); plt.legend(fontsize=7); save("fallback_rate_by_layer_lr")
 
     # Contemporaneous estimator ratio; distinct from active beta/oracle below.
@@ -228,8 +319,12 @@ def plot(config, runs, output, require_tests=True):
         if spec["method"] != FISHER_METHOD:
             continue
         frames = [interval_frames[(seed, spec["run_id"])] for seed in config["seeds"]]
-        result = _aggregate_interval_ratio(frames, "beta_dp_raw", "beta_oracle")
-        _plot_aggregate(result, "interval_index", "median", f"lr={spec['learning_rate']:.2f}", fill=False)
+        result = aggregate_beta_raw_oracle_ratio(frames)
+        for layer in LAYERS:
+            part = result[(result.learning_rate == spec["learning_rate"])
+                          & (result.layer == layer)]
+            _plot_aggregate(part, "interval_index", "median",
+                            f"{spec['learning_rate']:.2f}/{layer}", fill=False)
     plt.axhline(1, color="black", lw=.7); plt.xlabel("Interval")
     plt.ylabel("DP raw beta / oracle beta"); plt.legend(fontsize=7)
     save("beta_raw_oracle_ratio_over_time")
@@ -278,16 +373,10 @@ def plot(config, runs, output, require_tests=True):
                                  ("update_to_clean_reference_ratio", "update_to_clean_reference_ratio", "Update / clean reference")):
         plt.figure(figsize=(8, 5))
         for spec in specs:
-            frame = pd.concat([layer_frames[(seed, spec["run_id"])] for seed in config["seeds"]],
-                              ignore_index=True)
-            if metric not in frame:
-                continue
-            values = pd.to_numeric(frame[metric], errors="coerce")
-            numeric = values.to_numpy(dtype=float)
-            frame = frame.loc[values.notna() & np.isfinite(numeric)].copy()
-            frame[metric] = values.loc[frame.index]
-            group = frame.groupby("layer")[metric].median()
-            plt.plot(list(group.index), group.values, marker="o", label=label(spec))
+            frames = [layer_frames[(seed, spec["run_id"])] for seed in config["seeds"]]
+            result = aggregate_seed_equal_metric(frames, metric)
+            part = result[result.learning_rate == spec["learning_rate"]]
+            _plot_aggregate(part, "layer", "median", label(spec), fill=False)
         plt.xlabel("Layer"); plt.ylabel(ylabel); plt.legend(fontsize=6); save(name)
 
     divergent = summary_frame[summary_frame.status == "diverged"]

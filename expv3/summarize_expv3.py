@@ -25,6 +25,19 @@ def _median(values):
     return float(values.median()) if len(values) else None
 
 
+def seed_level_median(rows, field):
+    """Median each seed's observed statistic, then median across seeds."""
+    by_seed = {}
+    for row in rows:
+        value = row.get(field)
+        try:
+            if value is not None and math.isfinite(float(value)):
+                by_seed.setdefault(row["seed"], []).append(float(value))
+        except (TypeError, ValueError):
+            continue
+    return _median([_median(values) for values in by_seed.values()])
+
+
 def _late(frame, total):
     return frame[frame.step + 1 > total / 2]
 
@@ -190,7 +203,8 @@ def summarize(config, runs, output, require_tests=True):
         fallback = [row for row in controller_rows
                     if row["method"] == FISHER_METHOD and row["learning_rate"] == lr]
         mech = [row for row in mechanism_rows
-                if row["method"] == FISHER_METHOD and row["learning_rate"] == lr and row["layer"] == "fc2"]
+                if row["method"] == FISHER_METHOD and row["learning_rate"] == lr
+                and row["layer"] == "fc2"]
         utility = {
             "final_accuracy_mean": _mean([row["final_accuracy"] for row in completed]),
             "final_accuracy_sd": _sd([row["final_accuracy"] for row in completed]),
@@ -201,6 +215,12 @@ def summarize(config, runs, output, require_tests=True):
             "final_test_loss_mean": _mean([row["final_test_loss"] for row in completed]),
             "final_test_loss_sd": _sd([row["final_test_loss"] for row in completed]),
         }
+        completed_fallback = [row for row in fallback if row["status"] == "completed"]
+        completed_mech = [row for row in mechanism_rows
+                          if row["method"] == FISHER_METHOD
+                          and row["learning_rate"] == lr
+                          and row["layer"] == "fc2"
+                          and row["status"] == "completed"]
         lr_rows.append({
             "method": FISHER_METHOD, "learning_rate": lr, "n_runs": len(group),
             "n_completed": len(completed), "n_diverged": len(diverged),
@@ -214,9 +234,19 @@ def summarize(config, runs, output, require_tests=True):
             "final_test_loss_mean_completed": utility["final_test_loss_mean"],
             "final_test_loss_sd_completed": utility["final_test_loss_sd"],
             "number_diverged": len(diverged),
-            "median_fallback_rate": _median([row["fallback_rate"] for row in fallback]),
-            "median_beta_train": _median([row["median_beta_train"] for row in fallback]),
-            "median_effective_signal_lr": _median([row["effective_signal_lr"] for row in mech]),
+            "mechanism_aggregate_scope": "all_observed_seed_level",
+            "median_fallback_rate": seed_level_median(fallback, "fallback_rate"),
+            "median_beta_train": seed_level_median(fallback, "median_beta_train"),
+            "median_effective_signal_lr": seed_level_median(mech, "effective_signal_lr"),
+            "median_fallback_rate_completed": seed_level_median(
+                completed_fallback, "fallback_rate"
+            ),
+            "median_beta_train_completed": seed_level_median(
+                completed_fallback, "median_beta_train"
+            ),
+            "median_effective_signal_lr_completed": seed_level_median(
+                completed_mech, "effective_signal_lr"
+            ),
         })
     write_csv(output / "summary_learning_rate.csv", lr_rows)
 

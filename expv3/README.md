@@ -48,14 +48,16 @@ A completed step has a successful optimizer update, finite parameters, and a
 train artifact. A parameter-nonfinite update is excluded from completed steps
 and ordinary evaluation, while its privacy query and valid beta observation
 remain recorded. `divergence_stage` is null for completion, or one of `loss`,
-`noisy_gradient`, `filtered_gradient`, `optimizer_exception`, `parameters`.
+`noisy_gradient`, `filtered_gradient`, `parameters`. Unexpected optimizer,
+PyTorch, CUDA, or programming exceptions propagate and do not produce a
+scientific-divergence artifact.
 
 | Failure boundary | Extra privacy query | Extra beta observation | Completed update |
 | --- | --- | --- | --- |
 | Loss before DP | No | No | No |
 | Nonfinite noisy gradient | Yes | No | No |
 | Nonfinite filtered gradient | Yes | Yes | No |
-| Optimizer exception / nonfinite parameters | Yes | Yes | No |
+| Nonfinite parameters | Yes | Yes | No |
 
 “Loss before DP -> No extra privacy query”. This only means that no additional Gaussian mechanism was consumed. Because the abort decision depends on the current pre-DP private loss, the accountant does not cover that observable stopping event. Therefore a loss-stage-diverged artifact retains the epsilon for mechanisms executed before the abort, but does not claim complete end-to-end DP accounting. Post-DP divergence and completed runs have complete end-to-end accounting when their privacy steps, epsilon, and pairing validate. This is separate from `release_safe_under_dp=false`, which remains false because the full research artifact contains a non-DP oracle.
 
@@ -95,7 +97,8 @@ before `private_update` and therefore have no failed private timing row.
 Multi-seed accuracy and test-loss curves are aggregated by step across seeds;
 seed trajectories are never concatenated into one line. The `beta_train` curve
 uses the median across seeds at each interval. `beta_raw/oracle` is the
-contemporaneous `beta_dp_raw / beta_oracle` diagnostic, while
+contemporaneous, layer-specific `beta_dp_raw / beta_oracle` diagnostic (one
+line per learning-rate/layer pair), while
 `beta_train/oracle` is the actual `beta_train` used in interval `m` divided by
 the oracle beta from that same interval `m`.
 
@@ -106,5 +109,8 @@ recorded in `beta_controller_metrics.csv`.
 Mechanism and layer summary rows carry `seed`, `run_id`, `status`,
 `completed_steps`, and `metric_scope` (`full` or `prefix`). Learning-rate full
 utility aggregates use completed runs only and report `n_runs`, `n_completed`,
-and `n_diverged`; paired matched-LR utility reports `n_total_pairs` and
-`n_valid_pairs`.
+and `n_diverged`; controller/mechanism aggregates report
+`mechanism_aggregate_scope=all_observed_seed_level` and first reduce within
+each seed before the across-seed median. Completed-only aliases are reported
+separately and are null when no completed run exists. Paired matched-LR
+utility reports `n_total_pairs` and `n_valid_pairs`.
