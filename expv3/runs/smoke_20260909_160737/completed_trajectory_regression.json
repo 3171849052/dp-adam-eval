@@ -1,0 +1,26 @@
+{
+  "dp_fisher_wiener_adaptive_beta_lr5p00": {
+    "final_hash_equal": true,
+    "private_equal": true,
+    "synthetic_equal": true,
+    "beta_H_equal": true
+  },
+  "dp_sgd_lr0p50": {
+    "final_hash_equal": true,
+    "private_equal": true,
+    "synthetic_equal": true,
+    "beta_H_equal": true
+  },
+  "dp_fisher_wiener_adaptive_beta_lr1p00": {
+    "final_hash_equal": true,
+    "private_equal": true,
+    "synthetic_equal": true,
+    "beta_H_equal": true
+  },
+  "dp_fisher_wiener_adaptive_beta_lr0p50": {
+    "final_hash_equal": true,
+    "private_equal": true,
+    "synthetic_equal": true,
+    "beta_H_equal": true
+  }
+}

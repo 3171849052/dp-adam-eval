@@ -1,0 +1,58 @@
+{
+  "dp_fisher_wiener_adaptive_beta_lr5p00": {
+    "layer_metrics.csv": "fdd43494b499eb7351d0c723c89673d7937c8ad063b4ca00a21aa288fa54902c",
+    "eigenbin_metrics.csv": "15216c1bf162f58442239144b3f0723bd90db976376e3833ab9d2fde745f04ce",
+    "beta_controller_metrics.csv": "ed0b40ed1da232cf63c30ac2f0027f533fa81226dfb48938f6d53e2fafb5b541",
+    "h_certificates.json": "7a867b98189344a8f00eb1a5a809688be43525c69184d5208d137daf871a2748",
+    "beta_step_metrics.csv": "319f60cb643946c8cd85eff3dc1759f0deffb25b56343b97e67e772648ab8bb5",
+    "config.json": "20d5b9e1ad7966bcba2f92c717df3a039fe98f5c58841a5c758211140308a69c",
+    "train_metrics.csv": "418544b0a1b11e6ba6953d3928dc8e881ebb69fb5be587e229b696e37bd106e3",
+    "summary.json": "041565fd929b0a51615b6b6e26fbd9046c7a4c759db92a645dae119f2d2ea5b4",
+    "refresh_metrics.csv": "cf4ebf6601c85efbbc1b3ff20b3a54ea5bc472db80741ff4df1f9b6d875e71e2",
+    "beta_interval_metrics.csv": "fd4f39b14cf781248e8434e838f9a034aad8c646b34db5803e86c855f59c2ea3",
+    "metadata.json": "3008a21cb0acbc8524631fed129a2ff73930f5cd66bbdb6c9fa32f0e77e06897",
+    "pairing.json": "1887ab5d148b1d58791377246d96b716247d5cae98ec79517455d32962cc0591"
+  },
+  "dp_sgd_lr0p50": {
+    "layer_metrics.csv": "09591e68e093317f251f62f05d3c9421dbdcd94987eb1a962ff28fddde637547",
+    "eigenbin_metrics.csv": "15216c1bf162f58442239144b3f0723bd90db976376e3833ab9d2fde745f04ce",
+    "beta_controller_metrics.csv": "a3e87b3c5126071acbb245c2d24b028ac44311438d84ccfd679586807eaa6eaf",
+    "h_certificates.json": "0483567b03db53d34e87f76946a154094a0b6a3a4d74bb98ee685b8f51d1f1f7",
+    "beta_step_metrics.csv": "7b3e2e50d3c142bfacc5bad8ec934255f96d3d26dda0fcf8d30ba0ae013c7d26",
+    "config.json": "20d5b9e1ad7966bcba2f92c717df3a039fe98f5c58841a5c758211140308a69c",
+    "train_metrics.csv": "0972b3a2c7b5081d1f9ae92e7c88d6a753149b698834cc83d269582533c476e7",
+    "summary.json": "643e33d2c38a8c67f1e2d4203939d40950fbbcc1e4640e7d8d965de8a925a302",
+    "refresh_metrics.csv": "9168ef70ce992c08be43d3d91bece570f54d2d6969790895014c7ae8ec3985fa",
+    "beta_interval_metrics.csv": "c4f63b75b7c70a510e236f51114d0887ac6adb6adaa5cc31ef90f7abc6718fbd",
+    "metadata.json": "49189ae862d0523603eb3ad13f6eecc19e7a4e9456fead7df95daec660dd56a1",
+    "pairing.json": "d997b8dc57f477ba33f1dff720074771a868df907a086c924f03ee979ea403e1"
+  },
+  "dp_fisher_wiener_adaptive_beta_lr1p00": {
+    "layer_metrics.csv": "a0ebdce6d37d883c7a3ad324f1a38dcf4583cac27abfdb4f7afd1fb6026776b8",
+    "eigenbin_metrics.csv": "15216c1bf162f58442239144b3f0723bd90db976376e3833ab9d2fde745f04ce",
+    "beta_controller_metrics.csv": "e15506010c7ea7f9560c23be1b020045f3181b9c5f7861f125f71d548a27e733",
+    "h_certificates.json": "510150f3f5e2faea2cb47b83f0ab22376b560c1fc82f79c97a16c2ca066359be",
+    "beta_step_metrics.csv": "fa6ea1f0f3550c4654f75eecc6c59c04469d721a2baeafac2eed91df4b02383e",
+    "config.json": "20d5b9e1ad7966bcba2f92c717df3a039fe98f5c58841a5c758211140308a69c",
+    "train_metrics.csv": "0835cc6324146aed379dfbd2faa337400e51b66adf15e4cccee5f60b0821f365",
+    "summary.json": "04606bbef50a53511a6da798d983566fb21a74669f25f7a1f74c938520014273",
+    "refresh_metrics.csv": "27ab9b7e878392d5908735abfe445fbf398fec5c85fd883ef7c2316e9f602e1c",
+    "beta_interval_metrics.csv": "863c5e96941008630b845d2c7ef375437cc37a3a85d98023f6b821c022e5783a",
+    "metadata.json": "588aa65d1be5481fe17a47d1c067427e501b8a1aef4a21b036e25f048e888b10",
+    "pairing.json": "f6bf7d3e1a9dd0cffc7741c37a4f5f7687cc26d46e11519d5153c03190a00142"
+  },
+  "dp_fisher_wiener_adaptive_beta_lr0p50": {
+    "layer_metrics.csv": "cad33e93c91f328c4b1e7c16af1a7ec0933f4d7aa2255758a20d1c6d24db0713",
+    "eigenbin_metrics.csv": "15216c1bf162f58442239144b3f0723bd90db976376e3833ab9d2fde745f04ce",
+    "beta_controller_metrics.csv": "d3dd6b66daff5774f20b0df15105c7211d58eb35576e5c5f7bd34048234e65d9",
+    "h_certificates.json": "b44e283bbba650bf10c6bfb91bc92fa6cf6009db5d8da2b8ab5dbc041a1b4e00",
+    "beta_step_metrics.csv": "61102c12601817e36703ccd018a05000bf558fc13c3bf5901ed6b76d4caac7b5",
+    "config.json": "20d5b9e1ad7966bcba2f92c717df3a039fe98f5c58841a5c758211140308a69c",
+    "train_metrics.csv": "72e7f29441b50487b92262c4d371e3ccdfeecdb815c0c27fcf0c52f093dfc51a",
+    "summary.json": "f86cba006e3a018d2dce46c2bcfaaa1fd2b2faef84abf2e109cf9cbb5e896246",
+    "refresh_metrics.csv": "e29a29bf8a452aa65e4b00e7b863dfe59fc8d5e3828490b69b91a223fc931ad5",
+    "beta_interval_metrics.csv": "2a89c10a000e6e01192acf1dcea08e9ca600970145c1504e120b5db015b0871f",
+    "metadata.json": "424131773bf3810cc7354cb8078b8cce501a074486eb0947b9cf7bdcede94fac",
+    "pairing.json": "b2dda734caa1f54dc846e660c8e3495258a435f27e35dcb8e39b4885a51941c1"
+  }
+}

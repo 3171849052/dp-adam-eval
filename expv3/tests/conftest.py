@@ -1,4 +1,5 @@
 import os
+import time
 
 import pytest
 import torch
@@ -11,7 +12,7 @@ os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 def pytest_configure(config):
     (ROOT / "runs").mkdir(parents=True, exist_ok=True)
-    config.option.basetemp = str(ROOT / "runs" / "_pytest_tmp")
+    config.option.basetemp = str(ROOT / "runs" / f"_pytest_{time.time_ns()}")
     config.cache._cachedir = ROOT / "runs" / "_pytest_cache"
 
 
@@ -74,6 +75,18 @@ REQUIRED_NODEIDS = {
     "expv3/tests/test_validation.py::test_adaptive_beta_observation_counts_as_core_runtime",
     "expv3/tests/test_pipeline.py::test_pipeline",
 }
+REQUIRED_NODEIDS.update({
+    'expv3/tests/test_hardening.py::test_diverged_epsilon_matches_privacy_steps',
+    'expv3/tests/test_hardening.py::test_dp_sgd_synthetic_measurement_training_isolation',
+    'expv3/tests/test_hardening.py::test_filtered_gradient_divergence_consumes_privacy_step',
+    'expv3/tests/test_hardening.py::test_filtered_gradient_divergence_preserves_beta_observation',
+    'expv3/tests/test_hardening.py::test_formal_diverged_anchor_regression',
+    'expv3/tests/test_hardening.py::test_loss_divergence_does_not_consume_privacy_step[0]',
+    'expv3/tests/test_hardening.py::test_loss_divergence_does_not_consume_privacy_step[2]',
+    'expv3/tests/test_hardening.py::test_noisy_gradient_divergence_consumes_privacy_step',
+    'expv3/tests/test_hardening.py::test_oracle_exception_does_not_change_training',
+    'expv3/tests/test_hardening.py::test_raw_beta_statistics_use_interval_rows',
+})
 PASSED = set()
 
 

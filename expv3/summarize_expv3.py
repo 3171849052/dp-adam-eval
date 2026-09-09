@@ -41,6 +41,12 @@ def controller_decision_rates(frame):
     return float(fallback.mean()), float(accepted.mean())
 
 
+def raw_beta_statistics(intervals):
+    raw = pd.to_numeric(intervals.beta_dp_raw, errors="coerce")
+    raw = raw[np.isfinite(raw)]
+    return (float(raw.median()), float((raw < 0).mean())) if len(raw) else (None, None)
+
+
 def summarize(config, runs, output, require_tests=True):
     validate(config, runs, output, require_tests=require_tests)
     summaries, controller_parts, layer_parts, train_parts, interval_parts = [], [], [], [], []
@@ -61,10 +67,11 @@ def summarize(config, runs, output, require_tests=True):
             continue
         for keys, group in frame.groupby(["method", "learning_rate", "seed", "layer"]):
             method, lr, seed, layer = keys
-            raw = group.beta_raw_previous
+            observed = intervals[intervals.layer == layer]
+            median_raw, negative_rate = raw_beta_statistics(observed)
             train = group.beta_train
             fallback_rate, accepted_update_rate = controller_decision_rates(group)
-            train_oracle_ratios, lag_errors, observability = [], [], []
+            train_oracle_ratios, lag_errors = [], []
             for _, row in group.iterrows():
                 current = intervals[(intervals.layer == row.layer) &
                                     (intervals.interval_index == row.interval_index)]
@@ -74,18 +81,16 @@ def summarize(config, runs, output, require_tests=True):
                         train_oracle_ratios.append(float(row.beta_train) / oracle)
                     if pd.notna(row.beta_raw_previous) and float(row.beta_raw_previous) > 0 and oracle > 0:
                         lag_errors.append(abs(math.log10(float(row.beta_raw_previous) / oracle)))
-                    if pd.notna(current.iloc[0].oracle_observability_snr):
-                        observability.append(float(current.iloc[0].oracle_observability_snr))
             controller_rows.append({
                 "method": method, "learning_rate": lr, "seed": seed, "layer": layer,
                 "number_of_intervals": len(group), "median_beta_train": _median(train),
-                "mean_beta_train": _mean(train), "median_beta_raw": _median(raw),
-                "raw_negative_rate": float((pd.to_numeric(raw, errors="coerce") < 0).mean()),
+                "mean_beta_train": _mean(train), "median_beta_raw": median_raw,
+                "raw_negative_rate": negative_rate,
                 "fallback_rate": fallback_rate,
                 "accepted_update_rate": accepted_update_rate,
                 "median_beta_train_to_oracle_ratio": _median(train_oracle_ratios),
                 "median_lag_log_error": _median(lag_errors),
-                "median_observability_snr": _median(observability),
+                "median_observability_snr": _median(observed.oracle_observability_snr),
             })
     write_csv(output / "summary_beta_controller.csv", controller_rows)
 

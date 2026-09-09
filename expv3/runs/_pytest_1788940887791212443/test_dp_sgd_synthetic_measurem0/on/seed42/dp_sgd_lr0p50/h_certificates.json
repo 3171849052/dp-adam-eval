@@ -1,0 +1,90 @@
+[
+  {
+    "refresh_step": 0,
+    "interval_index": 0,
+    "layer": "conv1",
+    "H_hash": null,
+    "H_beta1_hash": null,
+    "beta_train": null,
+    "r": 0.4673004150390625,
+    "lambda_A": null,
+    "lambda_G": null
+  },
+  {
+    "refresh_step": 0,
+    "interval_index": 0,
+    "layer": "conv2",
+    "H_hash": null,
+    "H_beta1_hash": null,
+    "beta_train": null,
+    "r": 0.4673004150390625,
+    "lambda_A": null,
+    "lambda_G": null
+  },
+  {
+    "refresh_step": 0,
+    "interval_index": 0,
+    "layer": "fc1",
+    "H_hash": null,
+    "H_beta1_hash": null,
+    "beta_train": null,
+    "r": 0.4673004150390625,
+    "lambda_A": null,
+    "lambda_G": null
+  },
+  {
+    "refresh_step": 0,
+    "interval_index": 0,
+    "layer": "fc2",
+    "H_hash": null,
+    "H_beta1_hash": null,
+    "beta_train": null,
+    "r": 0.4673004150390625,
+    "lambda_A": null,
+    "lambda_G": null
+  },
+  {
+    "refresh_step": 2,
+    "interval_index": 1,
+    "layer": "conv1",
+    "H_hash": null,
+    "H_beta1_hash": null,
+    "beta_train": null,
+    "r": 0.4673004150390625,
+    "lambda_A": null,
+    "lambda_G": null
+  },
+  {
+    "refresh_step": 2,
+    "interval_index": 1,
+    "layer": "conv2",
+    "H_hash": null,
+    "H_beta1_hash": null,
+    "beta_train": null,
+    "r": 0.4673004150390625,
+    "lambda_A": null,
+    "lambda_G": null
+  },
+  {
+    "refresh_step": 2,
+    "interval_index": 1,
+    "layer": "fc1",
+    "H_hash": null,
+    "H_beta1_hash": null,
+    "beta_train": null,
+    "r": 0.4673004150390625,
+    "lambda_A": null,
+    "lambda_G": null
+  },
+  {
+    "refresh_step": 2,
+    "interval_index": 1,
+    "layer": "fc2",
+    "H_hash": null,
+    "H_beta1_hash": null,
+    "beta_train": null,
+    "r": 0.4673004150390625,
+    "lambda_A": null,
+    "lambda_G": null
+  }
+]

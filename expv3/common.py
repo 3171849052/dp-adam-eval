@@ -307,3 +307,11 @@ def isolated_rng(seed, device):
     with stream.use():
         yield stream
 
+
+def build_beta_interval_rows(rows, window):
+    """Preserve deployable interval algebra when research oracle values are missing."""
+    from expv2.beta_estimation import build_interval_rows
+    normalized = [dict(row, clean_signal_energy=(float('nan')
+                  if row.get('clean_signal_energy') is None else row['clean_signal_energy']))
+                  for row in rows]
+    return build_interval_rows(normalized, window)

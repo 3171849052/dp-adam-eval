@@ -21,7 +21,7 @@ def test_partial_interval_not_marked_applied_without_private_step(config, tiny_d
 
     def fail_at_boundary(*args, **kwargs):
         if kwargs.get("step") == config["K"]:
-            raise DivergenceError(config["K"], "filtered gradient")
+            raise DivergenceError(config["K"], "loss")
         return original(*args, **kwargs)
 
     monkeypatch.setattr(trainer, "private_update", fail_at_boundary)

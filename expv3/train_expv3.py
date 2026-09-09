@@ -14,7 +14,7 @@ from opacus.accountants.utils import get_noise_multiplier
 from torch.utils.data import DataLoader, Dataset, Subset
 
 from expv2 import beta_estimation
-from expv2.beta_estimation import build_interval_rows
+from expv3.common import build_beta_interval_rows as build_interval_rows
 from expv1.fisher_wiener import (
     apply_fisher_wiener,
     build_covariances,
@@ -73,6 +73,7 @@ TRAIN_FIELDS = [
     "beta_observation_time", "oracle_diagnostic_time", "reconstruction_diagnostic_time",
     "wiener_filter_time", "beta_controller_time", "active_state_bytes",
     "diagnostics_finite", "beta_diagnostics_finite",
+    "oracle_diagnostics_finite", "oracle_diagnostic_error",
 ]
 LAYER_FIELDS = [
     "seed", "run_id", "method", "config_fingerprint", "step", "layer", "learning_rate",
@@ -96,6 +97,7 @@ BETA_STEP_FIELDS = [
     "noisy_gradient_energy", "expected_noise_energy", "noise_debiased_energy_raw",
     "beta_oracle_step", "beta_dp_step_raw", "beta_dp_step_positive", "beta_dp_step_negative",
     "refresh_index", "active_beta_train", "active_beta_source_interval", "diagnostic_valid",
+    "oracle_diagnostic_error", "dp_observation_recorded", "optimizer_step_completed",
 ]
 BETA_INTERVAL_FIELDS = [
     "seed", "run_id", "method", "learning_rate", "interval_index", "start_step", "end_step",
@@ -250,7 +252,8 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
                    learning_rate, trace_state=None, controller=None, diagnostics=True,
                    beta_measurement=True, refresh_index=None, step=0, run_id=None,
                    seed=None, diagnostic_state=None, active_beta=None, active_source=None,
-                   oracle_diagnostics=True):
+                   oracle_diagnostics=True, on_dp_mechanism_executed=None,
+                   on_beta_observation=None):
     """Execute one DP mechanism, optional adaptive filter, and SGD update.
 
     The fixed order is: per-sample gradients -> global clipping/noise -> capture
@@ -281,8 +284,10 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
             batch_size=batch_size, store_summed_grad=bool(oracle_diagnostics),
         )
     audit["noise_rng_after"] = rng.audit()
+    if on_dp_mechanism_executed is not None:
+        on_dp_mechanism_executed(dict(audit))
     if not all_finite(p.grad for p in model.parameters()):
-        raise DivergenceError(step, "noisy gradient")
+        raise DivergenceError(step, "noisy_gradient")
 
     noisy_for_diagnostics = None
     deployable_rows = []
@@ -317,10 +322,16 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
             )
         controller_seconds += time.perf_counter() - started
 
-    if oracle_diagnostics:
+    oracle_error = None
+    if oracle_diagnostics and trace_state is not None:
         sync(model)
         started = time.perf_counter()
-        oracle_rows = capture_oracle_beta_diagnostics(model, trace_state)
+        try:
+            oracle_rows = capture_oracle_beta_diagnostics(model, trace_state)
+        except Exception as exc:
+            # Only the research oracle boundary is recoverable.
+            oracle_error = type(exc).__name__
+            oracle_rows = {}
         sync(model)
         oracle_seconds += time.perf_counter() - started
 
@@ -330,8 +341,13 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
         merged.update(oracle_rows.get(row["layer"], {
             "clean_signal_energy": None, "beta_oracle_step": None,
         }))
+        merged.update(oracle_diagnostic_error=oracle_error, dp_observation_recorded=True,
+                      optimizer_step_completed=False)
         merged["diagnostic_valid"] = beta_estimation.beta_step_diagnostic_is_finite(merged)
         beta_rows.append(merged)
+
+    if on_beta_observation is not None:
+        on_beta_observation(beta_rows)
 
     sync(model)
     started = time.perf_counter()
@@ -342,9 +358,16 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
     sync(model)
     filter_time = time.perf_counter() - started if method == FISHER_METHOD else 0.0
     if not all_finite(p.grad for p in model.parameters()):
-        raise DivergenceError(step, "filtered gradient")
+        raise DivergenceError(step, "filtered_gradient")
 
-    optimizer.step()
+    try:
+        optimizer.step()
+    except Exception as exc:
+        raise DivergenceError(step, "optimizer_exception") from exc
+    if not all_finite(model.parameters()):
+        raise DivergenceError(step, "parameters")
+    for row in beta_rows:
+        row["optimizer_step_completed"] = True
     rows, layer_rows = {}, []
     if diagnostics and oracle_diagnostics:
         sync(model)
@@ -364,7 +387,10 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
             layer_rows = [{"layer": name, "diagnostic_error": True} for name in LAYERS]
         sync(model)
         reconstruction_seconds += time.perf_counter() - started
-    rows.update(clip_rate=clip_rate, wiener_filter_time=filter_time,
+    rows.update(oracle_diagnostic_error=oracle_error,
+                oracle_diagnostics_finite=(oracle_error is None and all(
+                    diagnostic_row_finite(row) for row in oracle_rows.values())),
+                clip_rate=clip_rate, wiener_filter_time=filter_time,
                 beta_controller_time=controller_seconds,
                 beta_observation_time=beta_observation_seconds,
                 oracle_diagnostic_time=oracle_seconds,
@@ -536,25 +562,22 @@ def _controller_rows(config, spec, step, interval, trace_state, active, beta1_st
     return rows
 
 
-def _enrich_intervals(intervals, method, refresh_rows, controller_rows, beta_steps=None, K=None):
+def _enrich_intervals(intervals, method, refresh_rows, controller_rows, successful_steps=None, K=None):
     if not intervals:
         return intervals
-    if beta_steps is None:
-        beta_steps = []
-    # A constructed refresh is not evidence that its H was used.  Only a
-    # completed beta step proves that the following interval reached the
-    # private update and consumed that refresh's state.
+    if successful_steps is None:
+        successful_steps = []
+    # The supplied steps are successful finite optimizer updates, not observations.
     used = set()
-    if method == FISHER_METHOD and beta_steps:
-        # Completed beta steps, rather than constructed refreshes, determine
-        # whether the next interval actually used this estimate.
+    if method == FISHER_METHOD and successful_steps:
+        # A refresh or observation alone does not prove optimizer use.
         spacing = int(K) if K is not None else (
             int(refresh_rows[1]["step"]) - int(refresh_rows[0]["step"])
             if len(refresh_rows) > 1 else 0
         )
         if spacing > 0:
             used = {
-                int(row["step"]) // spacing - 1 for row in beta_steps
+                int(row["step"]) // spacing - 1 for row in successful_steps
                 if int(row["step"]) // spacing > 0
             }
     next_beta = {}
@@ -591,7 +614,7 @@ def _write_artifacts(root, config, spec, rows, layers, refreshes, beta_steps,
 
 
 def train(config, seed, run_name, output, data_override=None, *, diagnostics=True,
-          beta_measurement=True, oracle_diagnostics=True):
+          beta_measurement=True, oracle_diagnostics=True, synthetic_measurement=True):
     """Run one of the four canonical paired trajectories."""
     check_config(config)
     if seed not in config["seeds"]:
@@ -600,6 +623,8 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     if spec is None:
         raise ValueError("Unknown canonical run")
     spec = dict(spec, seed=seed)
+    if not synthetic_measurement and (spec["method"] == FISHER_METHOD or beta_measurement):
+        raise ValueError("Disabling synthetic measurement requires DP-SGD and beta_measurement=False")
     root = output_path(output) / f"seed{seed}" / run_name
     root.mkdir(parents=True, exist_ok=False)
     save_json(root / "config.json", config)
@@ -646,6 +671,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         "eigen_budget": 0, "rng_seeds": {"init": seed, "loader": seed + 1,
         "test": seed + 2, "synthetic": seed + 3, "noise": seed + 4},
         "sampling": "fixed shuffle/drop_last; inherited RDP convention, not Poisson",
+        "synthetic_measurement_enabled": synthetic_measurement,
         "diagnostics_enabled": diagnostics, "beta_measurement_enabled": beta_measurement,
         "oracle_diagnostics_enabled": oracle_diagnostics,
         "beta_algorithm_active": spec["method"] == FISHER_METHOD,
@@ -663,14 +689,15 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
 
     rows, layer_rows, beta_steps, refreshes = [], [], [], []
     controller_rows, h_certificates = [], []
-    audits, synthetic_audits = [], []
+    audits, synthetic_audits, privacy_audits = [], [], []
+    privacy_steps = 0
     active = diagnostic_state = trace_state = beta1_state = None
     controller = AdaptiveBetaController(LAYERS, config["beta_initial"]) if spec["method"] == FISHER_METHOD else None
     current_refresh_index = None
     current_beta_source_interval = None
     step = 0
     diagnostic_seconds = controller_seconds_total = 0.0
-    status, diverged_step = "completed", None
+    status, diverged_step, divergence_stage = "completed", None, None
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
     sync(model)
@@ -679,7 +706,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         for epoch in range(1, config["epochs"] + 1):
             iterator = iter(loader)
             for _ in range(len(loader)):
-                refreshed = step % config["K"] == 0
+                refreshed = synthetic_measurement and step % config["K"] == 0
                 refresh_time = 0.0
                 diagnostic_spectrum_time = 0.0
                 refresh_controller_time = 0.0
@@ -774,12 +801,19 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                 model.zero_grad(set_to_none=True)
                 loss = F.cross_entropy(model(x.to(device)), y.to(device), reduction="sum")
                 if not bool(torch.isfinite(loss)):
-                    status, diverged_step = "diverged", step
+                    status, diverged_step, divergence_stage = "diverged", step, "loss"
                     break
                 loss.backward()
                 active_beta = ({name: controller.active_beta(name) for name in LAYERS}
                                if controller is not None else None)
                 active_source = source_interval if controller is not None else None
+                def record_privacy(audit):
+                    nonlocal privacy_steps
+                    assert privacy_steps == step, "DP mechanism callback must occur once per batch"
+                    accountant.step(noise_multiplier=sigma, sample_rate=q)
+                    privacy_steps += 1
+                    privacy_audits.append({"step": step, "batch_indices": indices.tolist(), **audit})
+
                 try:
                     current_rows, current_layers, current_beta, audit, elapsed, controller_elapsed = private_update(
                         model, active, optimizer, noise_rng, sigma, config, len(x), spec["method"],
@@ -788,13 +822,14 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                         refresh_index=current_refresh_index, step=step, run_id=run_name, seed=seed,
                         diagnostic_state=diagnostic_state, active_beta=active_beta,
                         active_source=active_source, oracle_diagnostics=oracle_diagnostics,
+                        on_dp_mechanism_executed=record_privacy,
+                        on_beta_observation=beta_steps.extend,
                     )
                 except DivergenceError as exc:
-                    status, diverged_step = "diverged", exc.step
+                    status, diverged_step, divergence_stage = "diverged", exc.step, exc.stage
                     break
                 diagnostic_seconds += elapsed
                 controller_seconds_total += controller_elapsed + refresh_controller_time
-                accountant.step(noise_multiplier=sigma, sample_rate=q)
                 current_rows.update(
                     step=step, epoch=epoch, train_loss=float(loss.detach()) / len(x),
                     learning_rate=spec["learning_rate"], refresh_time=refresh_time,
@@ -809,15 +844,11 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                         current_rows.update(evaluate(model, test_loader, device))
                 rows.append(current_rows)
                 layer_rows.extend(dict(step=step, **value) for value in current_layers)
-                beta_steps.extend(current_beta)
                 parameters_finite = all_finite(model.parameters())
                 audits.append({"step": step, "batch_indices": indices.tolist(),
                                "model_hash": digest(model.parameters()),
                                "parameters_finite": parameters_finite, **audit})
                 step += 1
-                if not parameters_finite:
-                    status, diverged_step = "diverged", step - 1
-                    break
             if status == "diverged":
                 break
     finally:
@@ -829,19 +860,35 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         diagnostic_seconds, controller_seconds_total, active, status, diverged_step,
         oracle_diagnostics=oracle_diagnostics, beta_measurement=beta_measurement,
     )
+    summary.update(
+        planned_privacy_steps=total, privacy_steps=privacy_steps,
+        beta_observation_steps=len({row["step"] for row in beta_steps}),
+        divergence_stage=divergence_stage,
+        oracle_diagnostics_all_valid=(not oracle_diagnostics or (
+            all(row.get("oracle_diagnostics_finite", True) for row in rows)
+            and all(row.get("oracle_diagnostic_error") is None
+                    and row.get("clean_signal_energy") is not None
+                    and value_finite(row["clean_signal_energy"])
+                    and value_finite(row.get("beta_oracle_step")) for row in beta_steps))),
+        oracle_diagnostic_error_steps=sorted({row["step"] for row in [*rows, *beta_steps]
+                                            if row.get("oracle_diagnostic_error")}),
+        beta_diagnostics_all_finite=all(row["diagnostic_valid"] for row in beta_steps),
+        beta_diagnostic_nonfinite_steps=sorted({row["step"] for row in beta_steps
+                                               if not row["diagnostic_valid"]}),
+    )
     metadata.update(summary, complete=status == "completed")
     save_json(root / "summary.json", summary)
     save_json(root / "metadata.json", metadata)
     interval_rows = (build_interval_rows(beta_steps, config["beta_window"])
                      if beta_steps and oracle_diagnostics else [])
     interval_rows = _enrich_intervals(
-        interval_rows, spec["method"], refreshes, controller_rows, beta_steps, config["K"]
+        interval_rows, spec["method"], refreshes, controller_rows, rows, config["K"]
     )
     try:
         _write_artifacts(
             root, config, spec, rows, layer_rows, refreshes, beta_steps,
             interval_rows, controller_rows,
-            {"private": audits, "synthetic": synthetic_audits}, h_certificates,
+            {"private": audits, "privacy": privacy_audits, "synthetic": synthetic_audits}, h_certificates,
         )
     finally:
         model.remove_hooks()

@@ -1,0 +1,769 @@
+diff --git a/expv3/README.md b/expv3/README.md
+index ae0d69b..9d91f5b 100644
+--- a/expv3/README.md
++++ b/expv3/README.md
+@@ -35,3 +35,52 @@ therefore is DP post-processing with no additional accountant step.
+ 
+ Formal runs are intentionally never launched automatically.  Run the tests and
+ smoke pipeline first, then use the command printed by the agent.
++
++Privacy accounting occurs immediately after a Gaussian DP mechanism is
++successfully executed, not after the Wiener filter or optimizer update.
++`planned_privacy_steps` is the calibrated run length. `privacy_steps` counts
++consumed Gaussian queries and may exceed `completed_steps` by one.
++The validator independently recomputes RDP epsilon from consumed queries;
++the formal full-run epsilon anchor applies only to completed runs. The fixed
++formal sigma and sample rate apply to both completed and diverged runs.
++
++A completed step has a successful optimizer update, finite parameters, and a
++train artifact. A parameter-nonfinite update is excluded from completed steps
++and ordinary evaluation, while its privacy query and valid beta observation
++remain recorded. `divergence_stage` is null for completion, or one of `loss`,
++`noisy_gradient`, `filtered_gradient`, `optimizer_exception`, `parameters`.
++
++| Failure boundary | Extra privacy query | Extra beta observation | Completed update |
++| --- | --- | --- | --- |
++| Loss before DP | No | No | No |
++| Nonfinite noisy gradient | Yes | No | No |
++| Nonfinite filtered gradient | Yes | Yes | No |
++| Optimizer exception / nonfinite parameters | Yes | Yes | No |
++
++`pairing.private` records successful finite training steps; `pairing.privacy`
++records all executed DP mechanisms, including final post-noise failures;
++`beta_step_metrics` records all successfully formed deployable observations.
++These lengths can differ at divergence. Each beta row explicitly records
++`dp_observation_recorded` and `optimizer_step_completed`. Partial intervals
++include valid observations from failed updates. An interval is marked
++`applied_to_training` / `was_used_by_next_interval` only when a successful
++optimizer update used the next interval's H; constructing a refresh or
++recording an observation does not suffice. No gradient or noise tensors are
++saved. `actual_noise_saved=false` remains unchanged.
++
++Oracle capture exceptions are recorded by exception type without exception
++messages or sensitive payloads. They invalidate research diagnostics and
++cannot change status, controller decisions, H, or training. Missing oracle
++values remain missing in interval diagnostics while deployable algebra remains
++available. Deployable capture, controller, clipping/noise, and H exceptions
++are not swallowed as research errors.
++
++The internal keyword-only `synthetic_measurement=False` control exists solely
++for DP-SGD isolation tests and requires `beta_measurement=False`. It skips all
++synthetic samples, covariances, traces, and measurement refreshes. Adaptive
++Fisher rejects it. CLI and formal/smoke configs retain measurement enabled.
++
++Raw beta median and negative rate use finite `beta_dp_raw` values from all
++observed interval rows, including final and partial intervals. Empty finite
++sets report null, including DP-SGD without measurements. Fallback and accepted
++rates still use controller decision rows with `interval_index > 0`.
+diff --git a/expv3/common.py b/expv3/common.py
+index 60d4ea5..1a4b861 100644
+--- a/expv3/common.py
++++ b/expv3/common.py
+@@ -307,3 +307,11 @@ def isolated_rng(seed, device):
+     with stream.use():
+         yield stream
+ 
++
++def build_beta_interval_rows(rows, window):
++    """Preserve deployable interval algebra when research oracle values are missing."""
++    from expv2.beta_estimation import build_interval_rows
++    normalized = [dict(row, clean_signal_energy=(float('nan')
++                  if row.get('clean_signal_energy') is None else row['clean_signal_energy']))
++                  for row in rows]
++    return build_interval_rows(normalized, window)
+diff --git a/expv3/runs/test_evidence.json b/expv3/runs/test_evidence.json
+index 6c58164..a85f78f 100644
+--- a/expv3/runs/test_evidence.json
++++ b/expv3/runs/test_evidence.json
+@@ -1,6 +1,6 @@
+ {
+   "passed": true,
+-  "tests": 44,
++  "tests": 66,
+   "required_nodeids": [
+     "expv3/tests/test_adaptive_gain.py::test_beta1_gain_equivalence",
+     "expv3/tests/test_adaptive_gain.py::test_beta_monotonicity",
+@@ -18,6 +18,16 @@
+     "expv3/tests/test_divergence.py::test_divergence_semantics",
+     "expv3/tests/test_divergence.py::test_partial_interval_not_marked_applied_without_private_step",
+     "expv3/tests/test_divergence.py::test_research_diagnostic_nan_does_not_diverge",
++    "expv3/tests/test_hardening.py::test_diverged_epsilon_matches_privacy_steps",
++    "expv3/tests/test_hardening.py::test_dp_sgd_synthetic_measurement_training_isolation",
++    "expv3/tests/test_hardening.py::test_filtered_gradient_divergence_consumes_privacy_step",
++    "expv3/tests/test_hardening.py::test_filtered_gradient_divergence_preserves_beta_observation",
++    "expv3/tests/test_hardening.py::test_formal_diverged_anchor_regression",
++    "expv3/tests/test_hardening.py::test_loss_divergence_does_not_consume_privacy_step[0]",
++    "expv3/tests/test_hardening.py::test_loss_divergence_does_not_consume_privacy_step[2]",
++    "expv3/tests/test_hardening.py::test_noisy_gradient_divergence_consumes_privacy_step",
++    "expv3/tests/test_hardening.py::test_oracle_exception_does_not_change_training",
++    "expv3/tests/test_hardening.py::test_raw_beta_statistics_use_interval_rows",
+     "expv3/tests/test_lag_semantics.py::test_no_current_batch_leakage",
+     "expv3/tests/test_lag_semantics.py::test_observation_only_affects_future_interval",
+     "expv3/tests/test_pipeline.py::test_pipeline",
+@@ -64,6 +74,28 @@
+     "expv3/tests/test_divergence.py::test_divergence_semantics",
+     "expv3/tests/test_divergence.py::test_partial_interval_not_marked_applied_without_private_step",
+     "expv3/tests/test_divergence.py::test_research_diagnostic_nan_does_not_diverge",
++    "expv3/tests/test_hardening.py::test_algorithmic_exceptions_are_not_swallowed[capture_deployable_beta_observations]",
++    "expv3/tests/test_hardening.py::test_algorithmic_exceptions_are_not_swallowed[clip_and_noise_gradients]",
++    "expv3/tests/test_hardening.py::test_completed_formal_privacy_anchor",
++    "expv3/tests/test_hardening.py::test_diverged_epsilon_matches_privacy_steps",
++    "expv3/tests/test_hardening.py::test_dp_sgd_synthetic_measurement_training_isolation",
++    "expv3/tests/test_hardening.py::test_filtered_gradient_divergence_consumes_privacy_step",
++    "expv3/tests/test_hardening.py::test_filtered_gradient_divergence_preserves_beta_observation",
++    "expv3/tests/test_hardening.py::test_formal_diverged_anchor_regression",
++    "expv3/tests/test_hardening.py::test_loss_divergence_does_not_consume_privacy_step[0]",
++    "expv3/tests/test_hardening.py::test_loss_divergence_does_not_consume_privacy_step[2]",
++    "expv3/tests/test_hardening.py::test_noisy_gradient_divergence_consumes_privacy_step",
++    "expv3/tests/test_hardening.py::test_optimizer_divergence_preserves_consumed_events[optimizer_exception]",
++    "expv3/tests/test_hardening.py::test_optimizer_divergence_preserves_consumed_events[parameters]",
++    "expv3/tests/test_hardening.py::test_oracle_exception_bookkeeping_without_beta_measurement",
++    "expv3/tests/test_hardening.py::test_oracle_exception_does_not_change_training",
++    "expv3/tests/test_hardening.py::test_raw_beta_statistics_use_interval_rows",
++    "expv3/tests/test_hardening.py::test_synthetic_measurement_requires_dp_sgd_without_beta",
++    "expv3/tests/test_hardening.py::test_validator_rejects_partial_privacy_corruption[applied]",
++    "expv3/tests/test_hardening.py::test_validator_rejects_partial_privacy_corruption[audit]",
++    "expv3/tests/test_hardening.py::test_validator_rejects_partial_privacy_corruption[count]",
++    "expv3/tests/test_hardening.py::test_validator_rejects_partial_privacy_corruption[epsilon]",
++    "expv3/tests/test_hardening.py::test_validator_rejects_partial_privacy_corruption[stage]",
+     "expv3/tests/test_lag_semantics.py::test_no_current_batch_leakage",
+     "expv3/tests/test_lag_semantics.py::test_observation_only_affects_future_interval",
+     "expv3/tests/test_pipeline.py::test_pipeline",
+@@ -156,23 +188,24 @@
+     "expv3/__init__.py": "c07d52b6dab0456782bd6fc170d02dbca32fd7dee9759f520ff8a36e8780c7a3",
+     "expv3/adaptive_fisher_wiener.py": "bd4d164aecd6c378585f831f076795e5a5915c1198478ee1393d766a01086d1e",
+     "expv3/beta_controller.py": "2abd09b13da016145b3ea254d17e52a31d624b1d0a8b173a71788ff7ff287f5e",
+-    "expv3/common.py": "fedac83e68c48124da1e2b0383bb6c002802bd01f1daa57dfe7662d24fd17fe2",
++    "expv3/common.py": "d5b6d645d97afb75e4f54e835834051857e1943199f9f705159ef223eaa9a4ea",
+     "expv3/plot_expv3.py": "74a5063d1442d0ecfe8da84baec9402cec1030fad6f0b37e2d27138b86338f3a",
+-    "expv3/summarize_expv3.py": "c1cef976ac927c5137146bc863d957eb310b571c182559d4be7dc672b6034e7b",
++    "expv3/summarize_expv3.py": "7c3cd451d87cfdca24a1320cc7b30b3fa2fbcba723d370d8d9ffef9551b6a06f",
+     "expv3/tests/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+-    "expv3/tests/conftest.py": "fc59c6818d4adb5191e281e0cdb7e75279b5828f08605107d4c2da4ad20583da",
++    "expv3/tests/conftest.py": "e759c7f8140bd6dd4bcbbf21fc8b6a7436d3611ff5ccad00522c5093e4ff8be7",
+     "expv3/tests/test_adaptive_gain.py": "8fdcefcf72b2680d138b939803a8d00642edd5a4b8f0663f514b69d028a477fb",
+     "expv3/tests/test_beta_controller.py": "89d37e67ef9560d381c5438ce40f3d75a9a93f4281273f917abd31458b5a2b89",
+     "expv3/tests/test_config.py": "34c88daca93c79c7ad3761bb7e7b6b6ced0a6f010aefdfc7d8480936dad7f06a",
+-    "expv3/tests/test_diagnostic_isolation.py": "ff83dc79704188e35cdb0be710f70585fcbcc49f383bc4d27c0870d1c2520326",
+-    "expv3/tests/test_divergence.py": "76b5f6aa097061a5c74a66d3f41e41c3879c67f943327042ffe6e004d4efc0ea",
++    "expv3/tests/test_diagnostic_isolation.py": "fda6ecd6e181a881b57695dd773da67e37d70ab4139407f501db68c0e550d185",
++    "expv3/tests/test_divergence.py": "f53872e60a05539c3277bb71d13c999399cbb5323813c0a6ac4ea1d129c22943",
++    "expv3/tests/test_hardening.py": "827d7250785681c824323990560170acfcaef77082152d391764208402f7d987",
+     "expv3/tests/test_lag_semantics.py": "3509342db3ab598b043f2a761352ac52c17c826931d012255a7eb6f236c33d75",
+     "expv3/tests/test_pipeline.py": "a60ea9efef978832722663f2bd649a5791aae977721420b7ba8c54440a3e8872",
+     "expv3/tests/test_privacy_order.py": "8c31e3a1682af438ddad61f5922db20a85e5090f5e27aa509055fe54315e1af1",
+     "expv3/tests/test_rng_pairing.py": "2947a6ff3c58d91b95e9b3b76b6a341094e23e77f3c0cd38279aab79977b8a63",
+     "expv3/tests/test_validation.py": "d241d513afb9cb8febd3511b49277a32e7fd25e150facb588e2779a82ab11c13",
+-    "expv3/train_expv3.py": "ef8cea391a7500023e63dd349c89236540321291b8189724702de54706167eef",
+-    "expv3/validate_expv3.py": "d5d51176d2303df7ca154133b30691aea5661f83733ae254af741ccb5c03e3f6",
++    "expv3/train_expv3.py": "aecc85606093bc8a310aae87ad168f186dca15b7561c831d9e7169b5f386e549",
++    "expv3/validate_expv3.py": "b70aca33a181da633feaabb06a6c725584e38378e2554af64509c258cb708c82",
+     "fixed_reference_expv1_root": "/media/data/data/lt/dp-adam-eval/expv1/runs/formal_20260908_182603",
+     "fixed_reference_expv1b_root": "/media/data/data/lt/dp-adam-eval/expv1b/runs/formal_20260909_003544",
+     "fixed_reference_expv2_formal_root": "/media/data/data/lt/dp-adam-eval/expv2/runs/formal_20260909_124540",
+diff --git a/expv3/summarize_expv3.py b/expv3/summarize_expv3.py
+index a6507b2..0b41fc8 100644
+--- a/expv3/summarize_expv3.py
++++ b/expv3/summarize_expv3.py
+@@ -41,6 +41,12 @@ def controller_decision_rates(frame):
+     return float(fallback.mean()), float(accepted.mean())
+ 
+ 
++def raw_beta_statistics(intervals):
++    raw = pd.to_numeric(intervals.beta_dp_raw, errors="coerce")
++    raw = raw[np.isfinite(raw)]
++    return (float(raw.median()), float((raw < 0).mean())) if len(raw) else (None, None)
++
++
+ def summarize(config, runs, output, require_tests=True):
+     validate(config, runs, output, require_tests=require_tests)
+     summaries, controller_parts, layer_parts, train_parts, interval_parts = [], [], [], [], []
+@@ -61,10 +67,11 @@ def summarize(config, runs, output, require_tests=True):
+             continue
+         for keys, group in frame.groupby(["method", "learning_rate", "seed", "layer"]):
+             method, lr, seed, layer = keys
+-            raw = group.beta_raw_previous
++            observed = intervals[intervals.layer == layer]
++            median_raw, negative_rate = raw_beta_statistics(observed)
+             train = group.beta_train
+             fallback_rate, accepted_update_rate = controller_decision_rates(group)
+-            train_oracle_ratios, lag_errors, observability = [], [], []
++            train_oracle_ratios, lag_errors = [], []
+             for _, row in group.iterrows():
+                 current = intervals[(intervals.layer == row.layer) &
+                                     (intervals.interval_index == row.interval_index)]
+@@ -74,18 +81,16 @@ def summarize(config, runs, output, require_tests=True):
+                         train_oracle_ratios.append(float(row.beta_train) / oracle)
+                     if pd.notna(row.beta_raw_previous) and float(row.beta_raw_previous) > 0 and oracle > 0:
+                         lag_errors.append(abs(math.log10(float(row.beta_raw_previous) / oracle)))
+-                    if pd.notna(current.iloc[0].oracle_observability_snr):
+-                        observability.append(float(current.iloc[0].oracle_observability_snr))
+             controller_rows.append({
+                 "method": method, "learning_rate": lr, "seed": seed, "layer": layer,
+                 "number_of_intervals": len(group), "median_beta_train": _median(train),
+-                "mean_beta_train": _mean(train), "median_beta_raw": _median(raw),
+-                "raw_negative_rate": float((pd.to_numeric(raw, errors="coerce") < 0).mean()),
++                "mean_beta_train": _mean(train), "median_beta_raw": median_raw,
++                "raw_negative_rate": negative_rate,
+                 "fallback_rate": fallback_rate,
+                 "accepted_update_rate": accepted_update_rate,
+                 "median_beta_train_to_oracle_ratio": _median(train_oracle_ratios),
+                 "median_lag_log_error": _median(lag_errors),
+-                "median_observability_snr": _median(observability),
++                "median_observability_snr": _median(observed.oracle_observability_snr),
+             })
+     write_csv(output / "summary_beta_controller.csv", controller_rows)
+ 
+diff --git a/expv3/tests/conftest.py b/expv3/tests/conftest.py
+index 49a83f6..7f66b0f 100644
+--- a/expv3/tests/conftest.py
++++ b/expv3/tests/conftest.py
+@@ -1,4 +1,5 @@
+ import os
++import time
+ 
+ import pytest
+ import torch
+@@ -11,7 +12,7 @@ os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+ 
+ def pytest_configure(config):
+     (ROOT / "runs").mkdir(parents=True, exist_ok=True)
+-    config.option.basetemp = str(ROOT / "runs" / "_pytest_tmp")
++    config.option.basetemp = str(ROOT / "runs" / f"_pytest_{time.time_ns()}")
+     config.cache._cachedir = ROOT / "runs" / "_pytest_cache"
+ 
+ 
+@@ -74,6 +75,18 @@ REQUIRED_NODEIDS = {
+     "expv3/tests/test_validation.py::test_adaptive_beta_observation_counts_as_core_runtime",
+     "expv3/tests/test_pipeline.py::test_pipeline",
+ }
++REQUIRED_NODEIDS.update({
++    'expv3/tests/test_hardening.py::test_diverged_epsilon_matches_privacy_steps',
++    'expv3/tests/test_hardening.py::test_dp_sgd_synthetic_measurement_training_isolation',
++    'expv3/tests/test_hardening.py::test_filtered_gradient_divergence_consumes_privacy_step',
++    'expv3/tests/test_hardening.py::test_filtered_gradient_divergence_preserves_beta_observation',
++    'expv3/tests/test_hardening.py::test_formal_diverged_anchor_regression',
++    'expv3/tests/test_hardening.py::test_loss_divergence_does_not_consume_privacy_step[0]',
++    'expv3/tests/test_hardening.py::test_loss_divergence_does_not_consume_privacy_step[2]',
++    'expv3/tests/test_hardening.py::test_noisy_gradient_divergence_consumes_privacy_step',
++    'expv3/tests/test_hardening.py::test_oracle_exception_does_not_change_training',
++    'expv3/tests/test_hardening.py::test_raw_beta_statistics_use_interval_rows',
++})
+ PASSED = set()
+ 
+ 
+diff --git a/expv3/tests/test_diagnostic_isolation.py b/expv3/tests/test_diagnostic_isolation.py
+index 125061e..95284d9 100644
+--- a/expv3/tests/test_diagnostic_isolation.py
++++ b/expv3/tests/test_diagnostic_isolation.py
+@@ -33,6 +33,7 @@ def _trajectory(root):
+                          "beta_fallback_reason", "H_hash", "H_beta1_hash"]
+     return {
+         "private": _normalize(pairing["private"]),
++        "privacy": _normalize(pairing["privacy"]),
+         "synthetic": _normalize(pairing["synthetic"]),
+         "steps": _normalize(steps[step_fields].to_dict("records")),
+         "controller": _normalize(controller[controller_fields].to_dict("records")),
+diff --git a/expv3/tests/test_divergence.py b/expv3/tests/test_divergence.py
+index 76a6175..0f52ebe 100644
+--- a/expv3/tests/test_divergence.py
++++ b/expv3/tests/test_divergence.py
+@@ -21,7 +21,7 @@ def test_partial_interval_not_marked_applied_without_private_step(config, tiny_d
+ 
+     def fail_at_boundary(*args, **kwargs):
+         if kwargs.get("step") == config["K"]:
+-            raise DivergenceError(config["K"], "filtered gradient")
++            raise DivergenceError(config["K"], "loss")
+         return original(*args, **kwargs)
+ 
+     monkeypatch.setattr(trainer, "private_update", fail_at_boundary)
+diff --git a/expv3/train_expv3.py b/expv3/train_expv3.py
+index 90286a0..2a5637e 100644
+--- a/expv3/train_expv3.py
++++ b/expv3/train_expv3.py
+@@ -14,7 +14,7 @@ from opacus.accountants.utils import get_noise_multiplier
+ from torch.utils.data import DataLoader, Dataset, Subset
+ 
+ from expv2 import beta_estimation
+-from expv2.beta_estimation import build_interval_rows
++from expv3.common import build_beta_interval_rows as build_interval_rows
+ from expv1.fisher_wiener import (
+     apply_fisher_wiener,
+     build_covariances,
+@@ -73,6 +73,7 @@ TRAIN_FIELDS = [
+     "beta_observation_time", "oracle_diagnostic_time", "reconstruction_diagnostic_time",
+     "wiener_filter_time", "beta_controller_time", "active_state_bytes",
+     "diagnostics_finite", "beta_diagnostics_finite",
++    "oracle_diagnostics_finite", "oracle_diagnostic_error",
+ ]
+ LAYER_FIELDS = [
+     "seed", "run_id", "method", "config_fingerprint", "step", "layer", "learning_rate",
+@@ -96,6 +97,7 @@ BETA_STEP_FIELDS = [
+     "noisy_gradient_energy", "expected_noise_energy", "noise_debiased_energy_raw",
+     "beta_oracle_step", "beta_dp_step_raw", "beta_dp_step_positive", "beta_dp_step_negative",
+     "refresh_index", "active_beta_train", "active_beta_source_interval", "diagnostic_valid",
++    "oracle_diagnostic_error", "dp_observation_recorded", "optimizer_step_completed",
+ ]
+ BETA_INTERVAL_FIELDS = [
+     "seed", "run_id", "method", "learning_rate", "interval_index", "start_step", "end_step",
+@@ -250,7 +252,8 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
+                    learning_rate, trace_state=None, controller=None, diagnostics=True,
+                    beta_measurement=True, refresh_index=None, step=0, run_id=None,
+                    seed=None, diagnostic_state=None, active_beta=None, active_source=None,
+-                   oracle_diagnostics=True):
++                   oracle_diagnostics=True, on_dp_mechanism_executed=None,
++                   on_beta_observation=None):
+     """Execute one DP mechanism, optional adaptive filter, and SGD update.
+ 
+     The fixed order is: per-sample gradients -> global clipping/noise -> capture
+@@ -281,8 +284,10 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
+             batch_size=batch_size, store_summed_grad=bool(oracle_diagnostics),
+         )
+     audit["noise_rng_after"] = rng.audit()
++    if on_dp_mechanism_executed is not None:
++        on_dp_mechanism_executed(dict(audit))
+     if not all_finite(p.grad for p in model.parameters()):
+-        raise DivergenceError(step, "noisy gradient")
++        raise DivergenceError(step, "noisy_gradient")
+ 
+     noisy_for_diagnostics = None
+     deployable_rows = []
+@@ -317,10 +322,16 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
+             )
+         controller_seconds += time.perf_counter() - started
+ 
+-    if oracle_diagnostics:
++    oracle_error = None
++    if oracle_diagnostics and trace_state is not None:
+         sync(model)
+         started = time.perf_counter()
+-        oracle_rows = capture_oracle_beta_diagnostics(model, trace_state)
++        try:
++            oracle_rows = capture_oracle_beta_diagnostics(model, trace_state)
++        except Exception as exc:
++            # Only the research oracle boundary is recoverable.
++            oracle_error = type(exc).__name__
++            oracle_rows = {}
+         sync(model)
+         oracle_seconds += time.perf_counter() - started
+ 
+@@ -330,9 +341,14 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
+         merged.update(oracle_rows.get(row["layer"], {
+             "clean_signal_energy": None, "beta_oracle_step": None,
+         }))
++        merged.update(oracle_diagnostic_error=oracle_error, dp_observation_recorded=True,
++                      optimizer_step_completed=False)
+         merged["diagnostic_valid"] = beta_estimation.beta_step_diagnostic_is_finite(merged)
+         beta_rows.append(merged)
+ 
++    if on_beta_observation is not None:
++        on_beta_observation(beta_rows)
++
+     sync(model)
+     started = time.perf_counter()
+     if method == FISHER_METHOD:
+@@ -342,9 +358,16 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
+     sync(model)
+     filter_time = time.perf_counter() - started if method == FISHER_METHOD else 0.0
+     if not all_finite(p.grad for p in model.parameters()):
+-        raise DivergenceError(step, "filtered gradient")
++        raise DivergenceError(step, "filtered_gradient")
+ 
+-    optimizer.step()
++    try:
++        optimizer.step()
++    except Exception as exc:
++        raise DivergenceError(step, "optimizer_exception") from exc
++    if not all_finite(model.parameters()):
++        raise DivergenceError(step, "parameters")
++    for row in beta_rows:
++        row["optimizer_step_completed"] = True
+     rows, layer_rows = {}, []
+     if diagnostics and oracle_diagnostics:
+         sync(model)
+@@ -364,7 +387,10 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
+             layer_rows = [{"layer": name, "diagnostic_error": True} for name in LAYERS]
+         sync(model)
+         reconstruction_seconds += time.perf_counter() - started
+-    rows.update(clip_rate=clip_rate, wiener_filter_time=filter_time,
++    rows.update(oracle_diagnostic_error=oracle_error,
++                oracle_diagnostics_finite=(oracle_error is None and all(
++                    diagnostic_row_finite(row) for row in oracle_rows.values())),
++                clip_rate=clip_rate, wiener_filter_time=filter_time,
+                 beta_controller_time=controller_seconds,
+                 beta_observation_time=beta_observation_seconds,
+                 oracle_diagnostic_time=oracle_seconds,
+@@ -536,25 +562,22 @@ def _controller_rows(config, spec, step, interval, trace_state, active, beta1_st
+     return rows
+ 
+ 
+-def _enrich_intervals(intervals, method, refresh_rows, controller_rows, beta_steps=None, K=None):
++def _enrich_intervals(intervals, method, refresh_rows, controller_rows, successful_steps=None, K=None):
+     if not intervals:
+         return intervals
+-    if beta_steps is None:
+-        beta_steps = []
+-    # A constructed refresh is not evidence that its H was used.  Only a
+-    # completed beta step proves that the following interval reached the
+-    # private update and consumed that refresh's state.
++    if successful_steps is None:
++        successful_steps = []
++    # The supplied steps are successful finite optimizer updates, not observations.
+     used = set()
+-    if method == FISHER_METHOD and beta_steps:
+-        # Completed beta steps, rather than constructed refreshes, determine
+-        # whether the next interval actually used this estimate.
++    if method == FISHER_METHOD and successful_steps:
++        # A refresh or observation alone does not prove optimizer use.
+         spacing = int(K) if K is not None else (
+             int(refresh_rows[1]["step"]) - int(refresh_rows[0]["step"])
+             if len(refresh_rows) > 1 else 0
+         )
+         if spacing > 0:
+             used = {
+-                int(row["step"]) // spacing - 1 for row in beta_steps
++                int(row["step"]) // spacing - 1 for row in successful_steps
+                 if int(row["step"]) // spacing > 0
+             }
+     next_beta = {}
+@@ -591,7 +614,7 @@ def _write_artifacts(root, config, spec, rows, layers, refreshes, beta_steps,
+ 
+ 
+ def train(config, seed, run_name, output, data_override=None, *, diagnostics=True,
+-          beta_measurement=True, oracle_diagnostics=True):
++          beta_measurement=True, oracle_diagnostics=True, synthetic_measurement=True):
+     """Run one of the four canonical paired trajectories."""
+     check_config(config)
+     if seed not in config["seeds"]:
+@@ -600,6 +623,8 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
+     if spec is None:
+         raise ValueError("Unknown canonical run")
+     spec = dict(spec, seed=seed)
++    if not synthetic_measurement and (spec["method"] == FISHER_METHOD or beta_measurement):
++        raise ValueError("Disabling synthetic measurement requires DP-SGD and beta_measurement=False")
+     root = output_path(output) / f"seed{seed}" / run_name
+     root.mkdir(parents=True, exist_ok=False)
+     save_json(root / "config.json", config)
+@@ -646,6 +671,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
+         "eigen_budget": 0, "rng_seeds": {"init": seed, "loader": seed + 1,
+         "test": seed + 2, "synthetic": seed + 3, "noise": seed + 4},
+         "sampling": "fixed shuffle/drop_last; inherited RDP convention, not Poisson",
++        "synthetic_measurement_enabled": synthetic_measurement,
+         "diagnostics_enabled": diagnostics, "beta_measurement_enabled": beta_measurement,
+         "oracle_diagnostics_enabled": oracle_diagnostics,
+         "beta_algorithm_active": spec["method"] == FISHER_METHOD,
+@@ -663,14 +689,15 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
+ 
+     rows, layer_rows, beta_steps, refreshes = [], [], [], []
+     controller_rows, h_certificates = [], []
+-    audits, synthetic_audits = [], []
++    audits, synthetic_audits, privacy_audits = [], [], []
++    privacy_steps = 0
+     active = diagnostic_state = trace_state = beta1_state = None
+     controller = AdaptiveBetaController(LAYERS, config["beta_initial"]) if spec["method"] == FISHER_METHOD else None
+     current_refresh_index = None
+     current_beta_source_interval = None
+     step = 0
+     diagnostic_seconds = controller_seconds_total = 0.0
+-    status, diverged_step = "completed", None
++    status, diverged_step, divergence_stage = "completed", None, None
+     if device.type == "cuda":
+         torch.cuda.reset_peak_memory_stats(device)
+     sync(model)
+@@ -679,7 +706,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
+         for epoch in range(1, config["epochs"] + 1):
+             iterator = iter(loader)
+             for _ in range(len(loader)):
+-                refreshed = step % config["K"] == 0
++                refreshed = synthetic_measurement and step % config["K"] == 0
+                 refresh_time = 0.0
+                 diagnostic_spectrum_time = 0.0
+                 refresh_controller_time = 0.0
+@@ -774,12 +801,19 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
+                 model.zero_grad(set_to_none=True)
+                 loss = F.cross_entropy(model(x.to(device)), y.to(device), reduction="sum")
+                 if not bool(torch.isfinite(loss)):
+-                    status, diverged_step = "diverged", step
++                    status, diverged_step, divergence_stage = "diverged", step, "loss"
+                     break
+                 loss.backward()
+                 active_beta = ({name: controller.active_beta(name) for name in LAYERS}
+                                if controller is not None else None)
+                 active_source = source_interval if controller is not None else None
++                def record_privacy(audit):
++                    nonlocal privacy_steps
++                    assert privacy_steps == step, "DP mechanism callback must occur once per batch"
++                    accountant.step(noise_multiplier=sigma, sample_rate=q)
++                    privacy_steps += 1
++                    privacy_audits.append({"step": step, "batch_indices": indices.tolist(), **audit})
++
+                 try:
+                     current_rows, current_layers, current_beta, audit, elapsed, controller_elapsed = private_update(
+                         model, active, optimizer, noise_rng, sigma, config, len(x), spec["method"],
+@@ -788,13 +822,14 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
+                         refresh_index=current_refresh_index, step=step, run_id=run_name, seed=seed,
+                         diagnostic_state=diagnostic_state, active_beta=active_beta,
+                         active_source=active_source, oracle_diagnostics=oracle_diagnostics,
++                        on_dp_mechanism_executed=record_privacy,
++                        on_beta_observation=beta_steps.extend,
+                     )
+                 except DivergenceError as exc:
+-                    status, diverged_step = "diverged", exc.step
++                    status, diverged_step, divergence_stage = "diverged", exc.step, exc.stage
+                     break
+                 diagnostic_seconds += elapsed
+                 controller_seconds_total += controller_elapsed + refresh_controller_time
+-                accountant.step(noise_multiplier=sigma, sample_rate=q)
+                 current_rows.update(
+                     step=step, epoch=epoch, train_loss=float(loss.detach()) / len(x),
+                     learning_rate=spec["learning_rate"], refresh_time=refresh_time,
+@@ -809,15 +844,11 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
+                         current_rows.update(evaluate(model, test_loader, device))
+                 rows.append(current_rows)
+                 layer_rows.extend(dict(step=step, **value) for value in current_layers)
+-                beta_steps.extend(current_beta)
+                 parameters_finite = all_finite(model.parameters())
+                 audits.append({"step": step, "batch_indices": indices.tolist(),
+                                "model_hash": digest(model.parameters()),
+                                "parameters_finite": parameters_finite, **audit})
+                 step += 1
+-                if not parameters_finite:
+-                    status, diverged_step = "diverged", step - 1
+-                    break
+             if status == "diverged":
+                 break
+     finally:
+@@ -829,19 +860,35 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
+         diagnostic_seconds, controller_seconds_total, active, status, diverged_step,
+         oracle_diagnostics=oracle_diagnostics, beta_measurement=beta_measurement,
+     )
++    summary.update(
++        planned_privacy_steps=total, privacy_steps=privacy_steps,
++        beta_observation_steps=len({row["step"] for row in beta_steps}),
++        divergence_stage=divergence_stage,
++        oracle_diagnostics_all_valid=(not oracle_diagnostics or (
++            all(row.get("oracle_diagnostics_finite", True) for row in rows)
++            and all(row.get("oracle_diagnostic_error") is None
++                    and row.get("clean_signal_energy") is not None
++                    and value_finite(row["clean_signal_energy"])
++                    and value_finite(row.get("beta_oracle_step")) for row in beta_steps))),
++        oracle_diagnostic_error_steps=sorted({row["step"] for row in [*rows, *beta_steps]
++                                            if row.get("oracle_diagnostic_error")}),
++        beta_diagnostics_all_finite=all(row["diagnostic_valid"] for row in beta_steps),
++        beta_diagnostic_nonfinite_steps=sorted({row["step"] for row in beta_steps
++                                               if not row["diagnostic_valid"]}),
++    )
+     metadata.update(summary, complete=status == "completed")
+     save_json(root / "summary.json", summary)
+     save_json(root / "metadata.json", metadata)
+     interval_rows = (build_interval_rows(beta_steps, config["beta_window"])
+                      if beta_steps and oracle_diagnostics else [])
+     interval_rows = _enrich_intervals(
+-        interval_rows, spec["method"], refreshes, controller_rows, beta_steps, config["K"]
++        interval_rows, spec["method"], refreshes, controller_rows, rows, config["K"]
+     )
+     try:
+         _write_artifacts(
+             root, config, spec, rows, layer_rows, refreshes, beta_steps,
+             interval_rows, controller_rows,
+-            {"private": audits, "synthetic": synthetic_audits}, h_certificates,
++            {"private": audits, "privacy": privacy_audits, "synthetic": synthetic_audits}, h_certificates,
+         )
+     finally:
+         model.remove_hooks()
+diff --git a/expv3/validate_expv3.py b/expv3/validate_expv3.py
+index 255479c..cadb523 100644
+--- a/expv3/validate_expv3.py
++++ b/expv3/validate_expv3.py
+@@ -8,8 +8,9 @@ from pathlib import Path
+ import numpy as np
+ import pandas as pd
+ import torch
++from opacus.accountants import RDPAccountant
+ 
+-from expv2.beta_estimation import build_interval_rows
++from expv3.common import build_beta_interval_rows as build_interval_rows
+ 
+ from expv3.adaptive_fisher_wiener import selected_stats_digest, stats_digest
+ from expv3.common import (
+@@ -45,6 +46,26 @@ def cli():
+     return read_config(args.config), output_path(args.runs), output_path(args.output)
+ 
+ 
++def _expected_epsilon(privacy_steps, noise_multiplier, sample_rate, delta):
++    accountant = RDPAccountant()
++    for _ in range(privacy_steps):
++        accountant.step(noise_multiplier=noise_multiplier, sample_rate=sample_rate)
++    return accountant.get_epsilon(delta)
++
++
++def _validate_privacy_budget(config, summary):
++    if not config["smoke"]:
++        assert math.isclose(summary["noise_multiplier"], 1.068115234375, rel_tol=0.0, abs_tol=1e-12)
++        if summary["status"] == "completed":
++            assert summary["privacy_steps"] == 1170
++            assert math.isclose(summary["epsilon_spent"], 0.995693195331761, rel_tol=0.0, abs_tol=1e-10)
++    assert math.isclose(summary["sample_rate"], config["batch_size"] / (config["train_subset"] or 60000))
++    assert 0 <= summary["epsilon_spent"] <= config["epsilon"] + .02
++    expected_epsilon = _expected_epsilon(summary["privacy_steps"], summary["noise_multiplier"],
++                                         summary["sample_rate"], config["delta"])
++    assert math.isclose(summary["epsilon_spent"], expected_epsilon, rel_tol=1e-9, abs_tol=1e-10)
++
++
+ def _finite(value):
+     try:
+         return value is not None and math.isfinite(float(value))
+@@ -127,8 +148,6 @@ def _validate_beta_steps(config, frame, seed, run_id, completed,
+     core = ["step", "r", "dimension", "trace_A", "trace_G", "trace_F", "refresh_index",
+             "noisy_gradient_energy", "expected_noise_energy",
+             "noise_debiased_energy_raw"]
+-    if oracle_enabled:
+-        core.append("clean_signal_energy")
+     _assert_finite_columns(frame, core, nullable=() if oracle_enabled else ("clean_signal_energy",))
+     if len(frame):
+         assert frame.trace_F.gt(0).all() and frame.dimension.gt(0).all() and frame.r.gt(0).all()
+@@ -149,7 +168,8 @@ def _validate_beta_steps(config, frame, seed, run_id, completed,
+         expected_positive = max(expected_raw, 0.0)
+         _assert_derived(row.beta_dp_step_raw, expected_raw, "beta_dp_step_raw")
+         _assert_derived(row.beta_dp_step_positive, expected_positive, "beta_dp_step_positive")
+-        if oracle_enabled:
++        if oracle_enabled and pd.isna(row.oracle_diagnostic_error):
++            assert _finite(row.clean_signal_energy)
+             _assert_derived(row.beta_oracle_step,
+                             float(row.clean_signal_energy) / float(row.trace_F),
+                             "beta_oracle_step")
+@@ -173,9 +193,11 @@ def _validate_beta_steps(config, frame, seed, run_id, completed,
+                 _assert_close([row.active_beta_train], [control.beta_train])
+ 
+ 
+-def _validate_intervals(config, steps, intervals, method):
++def _validate_intervals(config, steps, intervals, method, successful_steps=None):
+     expected = build_interval_rows(steps.to_dict("records"), config["beta_window"])
+     assert len(intervals) == len(expected)
++    if not expected:
++        return
+     assert not intervals.duplicated(["layer", "interval_index"]).any()
+     left = intervals.sort_values(["layer", "interval_index"]).reset_index(drop=True)
+     right = pd.DataFrame(expected).sort_values(["layer", "interval_index"]).reset_index(drop=True)
+@@ -193,9 +215,10 @@ def _validate_intervals(config, steps, intervals, method):
+         if len(left):
+             assert left[column].tolist() == right[column].tolist(), column
+     used = set()
+-    if method == FISHER_METHOD and len(steps):
++    successful_steps = steps if successful_steps is None else successful_steps
++    if method == FISHER_METHOD and len(successful_steps):
+         used = {int(step) // int(config["K"]) - 1
+-                for step in steps.step.unique() if int(step) // int(config["K"]) > 0}
++                for step in successful_steps.step.unique() if int(step) // int(config["K"]) > 0}
+     for _, row in left.iterrows():
+         raw = row.beta_dp_raw
+         assert _bool(row.raw_finite) is (_float_class(raw) == "finite")
+@@ -219,7 +242,7 @@ def _validate_controller(config, frame, interval, method, refresh, certificates)
+     assert {(int(row.refresh_step), row.layer) for _, row in frame.iterrows()} == {
+         (int(step), layer) for step in refresh_step_values for layer in LAYERS
+     }
+-    assert set(frame.layer) == set(LAYERS)
++    assert set(frame.layer) == (set(LAYERS) if expected_rows else set())
+     _assert_finite_columns(frame, ["refresh_step", "interval_index", "previous_interval_n_steps",
+                                   "trace_A", "trace_G", "trace_F"], nullable=())
+     if "beta_algorithm_active" in frame:
+@@ -363,6 +386,37 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
+     else:
+         assert 0 <= completed <= total
+         assert completed in (summary["diverged_step"], summary["diverged_step"] + 1)
++    privacy = summary["privacy_steps"]
++    observations = summary["beta_observation_steps"]
++    stage = summary["divergence_stage"]
++    for key in ("privacy_steps", "beta_observation_steps", "divergence_stage", "planned_privacy_steps"):
++        assert meta[key] == summary[key]
++    assert summary["planned_privacy_steps"] == total
++    assert type(privacy) is int and type(observations) is int
++    if status == "completed":
++        assert stage is None and privacy == completed == total
++    else:
++        assert completed == summary["diverged_step"] < total
++        assert stage in ("loss", "noisy_gradient", "filtered_gradient", "optimizer_exception", "parameters")
++        assert privacy == completed + int(stage != "loss")
++    expected_observations = completed + int(stage in ("filtered_gradient", "optimizer_exception", "parameters"))
++    assert observations == (expected_observations if beta_measurement_enabled else 0)
++    assert 0 <= observations <= privacy <= total
++    assert [row["step"] for row in pairing["privacy"]] == list(range(privacy))
++    keys = ("step", "batch_indices", "noise_rng_before", "noise_rng_after")
++    _compare_pairing(pairing["private"], pairing["privacy"][:completed], keys)
++    for index, event in enumerate(pairing["privacy"]):
++        assert len(event["batch_indices"]) == config["batch_size"]
++        assert len(set(event["batch_indices"])) == config["batch_size"]
++        assert all(0 <= value < (config["train_subset"] or 60000) for value in event["batch_indices"])
++        assert event["noise_rng_before"] != event["noise_rng_after"]
++        if index:
++            assert event["noise_rng_before"] == pairing["privacy"][index-1]["noise_rng_after"]
++    assert all(row["parameters_finite"] for row in pairing["private"])
++    if stage != "optimizer_exception":
++        assert summary["parameters_finite"] is (stage != "parameters")
++    if status == "completed" and completed:
++        assert summary["final_model_hash"] == pairing["private"][-1]["model_hash"]
+     frames = {name: pd.read_csv(root / f"{name}.csv") for name in (
+         "train_metrics", "layer_metrics", "refresh_metrics", "beta_step_metrics",
+         "beta_interval_metrics", "beta_controller_metrics", "eigenbin_metrics")}
+@@ -370,28 +424,44 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
+     assert train.step.tolist() == list(range(completed))
+     assert len(layer) == completed * len(LAYERS)
+     assert eigenbin.empty
+-    _validate_beta_steps(config, beta_step, seed, spec["run_id"], completed,
++    _validate_beta_steps(config, beta_step, seed, spec["run_id"], observations,
+                          method=spec["method"], controller=controller,
+                          oracle_enabled=oracle_enabled,
+                          measurement_enabled=beta_measurement_enabled)
+     if oracle_enabled and beta_measurement_enabled:
+-        _validate_intervals(config, beta_step, interval, spec["method"])
++        _validate_intervals(config, beta_step, interval, spec["method"], train)
+     else:
+         assert interval.empty
++    assert beta_step.dp_observation_recorded.map(_bool).all()
++    assert beta_step.optimizer_step_completed.map(_bool).tolist() == [int(value) < completed for value in beta_step.step]
++    invalid_steps = sorted(set(int(row.step) for _, row in beta_step.iterrows() if not _bool(row.diagnostic_valid)))
++    assert summary["beta_diagnostic_nonfinite_steps"] == invalid_steps
++    assert summary["beta_diagnostics_all_finite"] is (not invalid_steps)
++    errors = sorted({int(row.step) for frame in (train, beta_step)
++                     for _, row in frame.iterrows() if pd.notna(row.oracle_diagnostic_error)})
++    assert summary["oracle_diagnostic_error_steps"] == errors
++    if status == "diverged":
++        for key in ("final_accuracy", "accuracy_auc", "late_mean_accuracy", "T50", "T70", "T80", "T85", "T90"):
++            assert summary[key] is None
+     expected_refresh = _expected_refresh_steps(status, completed, summary["diverged_step"], total, config["K"])
++    if not meta.get("synthetic_measurement_enabled", True):
++        assert spec["method"] == DP_METHOD and not beta_measurement_enabled
++        expected_refresh = []
+     assert refresh.step.tolist() == expected_refresh
+     assert (refresh.refresh_index.to_numpy() == refresh.step.to_numpy() // config["K"]).all()
+     assert [row["step"] for row in pairing["private"]] == list(range(completed))
+     assert [row["step"] for row in pairing["synthetic"]] == expected_refresh
+     assert refresh.step.tolist() == [row["step"] for row in pairing["synthetic"]]
+     _validate_controller(config, controller, interval, spec["method"], refresh, load(root / "h_certificates.json"))
++    for _, row in interval.iterrows():
++        if _bool(row.applied_to_training):
++            next_control = controller[(controller.interval_index == int(row.interval_index) + 1)
++                                      & (controller.layer == row.layer)]
++            assert len(next_control) == 1
++            _assert_derived(row.next_beta_train, next_control.iloc[0].beta_train, "next_beta_train")
+     assert summary["number_of_refreshes"] == len(expected_refresh)
+     assert summary["noise_multiplier"] == meta["noise_multiplier"]
+-    if not config["smoke"]:
+-        assert math.isclose(summary["noise_multiplier"], 1.068115234375, rel_tol=0.0, abs_tol=1e-12)
+-        assert math.isclose(summary["epsilon_spent"], 0.995693195331761, rel_tol=0.0, abs_tol=1e-10)
+-    assert math.isclose(summary["sample_rate"], config["batch_size"] / (config["train_subset"] or 60000))
+-    assert 0 < summary["epsilon_spent"] <= config["epsilon"] + .02
++    _validate_privacy_budget(config, summary)
+     if spec["method"] == DP_METHOD:
+         assert summary["active_state_bytes"] == 0 and not meta["beta_algorithm_active"]
+         assert refresh.measurement_only.all()
+@@ -485,6 +555,9 @@ def validate(config, runs, output, require_tests=True):
+         base = same_seed[0][2]
+         for record in same_seed[1:]:
+             pair = record[2]
++            common_privacy = min(len(base["privacy"]), len(pair["privacy"]))
++            _compare_pairing(base["privacy"][:common_privacy], pair["privacy"][:common_privacy],
++                             ("step", "batch_indices", "noise_rng_before", "noise_rng_after"))
+             common = min(len(base["private"]), len(pair["private"]))
+             _compare_pairing(base["private"][:common], pair["private"][:common],
+                              ("step", "batch_indices", "noise_rng_before", "noise_rng_after"))

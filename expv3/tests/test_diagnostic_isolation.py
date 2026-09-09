@@ -33,6 +33,7 @@ def _trajectory(root):
                          "beta_fallback_reason", "H_hash", "H_beta1_hash"]
     return {
         "private": _normalize(pairing["private"]),
+        "privacy": _normalize(pairing["privacy"]),
         "synthetic": _normalize(pairing["synthetic"]),
         "steps": _normalize(steps[step_fields].to_dict("records")),
         "controller": _normalize(controller[controller_fields].to_dict("records")),

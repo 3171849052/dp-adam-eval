@@ -8,8 +8,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+from opacus.accountants import RDPAccountant
 
-from expv2.beta_estimation import build_interval_rows
+from expv3.common import build_beta_interval_rows as build_interval_rows
 
 from expv3.adaptive_fisher_wiener import selected_stats_digest, stats_digest
 from expv3.common import (
@@ -43,6 +44,26 @@ def cli():
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     return read_config(args.config), output_path(args.runs), output_path(args.output)
+
+
+def _expected_epsilon(privacy_steps, noise_multiplier, sample_rate, delta):
+    accountant = RDPAccountant()
+    for _ in range(privacy_steps):
+        accountant.step(noise_multiplier=noise_multiplier, sample_rate=sample_rate)
+    return accountant.get_epsilon(delta)
+
+
+def _validate_privacy_budget(config, summary):
+    if not config["smoke"]:
+        assert math.isclose(summary["noise_multiplier"], 1.068115234375, rel_tol=0.0, abs_tol=1e-12)
+        if summary["status"] == "completed":
+            assert summary["privacy_steps"] == 1170
+            assert math.isclose(summary["epsilon_spent"], 0.995693195331761, rel_tol=0.0, abs_tol=1e-10)
+    assert math.isclose(summary["sample_rate"], config["batch_size"] / (config["train_subset"] or 60000))
+    assert 0 <= summary["epsilon_spent"] <= config["epsilon"] + .02
+    expected_epsilon = _expected_epsilon(summary["privacy_steps"], summary["noise_multiplier"],
+                                         summary["sample_rate"], config["delta"])
+    assert math.isclose(summary["epsilon_spent"], expected_epsilon, rel_tol=1e-9, abs_tol=1e-10)
 
 
 def _finite(value):
@@ -127,8 +148,6 @@ def _validate_beta_steps(config, frame, seed, run_id, completed,
     core = ["step", "r", "dimension", "trace_A", "trace_G", "trace_F", "refresh_index",
             "noisy_gradient_energy", "expected_noise_energy",
             "noise_debiased_energy_raw"]
-    if oracle_enabled:
-        core.append("clean_signal_energy")
     _assert_finite_columns(frame, core, nullable=() if oracle_enabled else ("clean_signal_energy",))
     if len(frame):
         assert frame.trace_F.gt(0).all() and frame.dimension.gt(0).all() and frame.r.gt(0).all()
@@ -149,7 +168,8 @@ def _validate_beta_steps(config, frame, seed, run_id, completed,
         expected_positive = max(expected_raw, 0.0)
         _assert_derived(row.beta_dp_step_raw, expected_raw, "beta_dp_step_raw")
         _assert_derived(row.beta_dp_step_positive, expected_positive, "beta_dp_step_positive")
-        if oracle_enabled:
+        if oracle_enabled and pd.isna(row.oracle_diagnostic_error):
+            assert _finite(row.clean_signal_energy)
             _assert_derived(row.beta_oracle_step,
                             float(row.clean_signal_energy) / float(row.trace_F),
                             "beta_oracle_step")
@@ -173,9 +193,11 @@ def _validate_beta_steps(config, frame, seed, run_id, completed,
                 _assert_close([row.active_beta_train], [control.beta_train])
 
 
-def _validate_intervals(config, steps, intervals, method):
+def _validate_intervals(config, steps, intervals, method, successful_steps=None):
     expected = build_interval_rows(steps.to_dict("records"), config["beta_window"])
     assert len(intervals) == len(expected)
+    if not expected:
+        return
     assert not intervals.duplicated(["layer", "interval_index"]).any()
     left = intervals.sort_values(["layer", "interval_index"]).reset_index(drop=True)
     right = pd.DataFrame(expected).sort_values(["layer", "interval_index"]).reset_index(drop=True)
@@ -193,9 +215,10 @@ def _validate_intervals(config, steps, intervals, method):
         if len(left):
             assert left[column].tolist() == right[column].tolist(), column
     used = set()
-    if method == FISHER_METHOD and len(steps):
+    successful_steps = steps if successful_steps is None else successful_steps
+    if method == FISHER_METHOD and len(successful_steps):
         used = {int(step) // int(config["K"]) - 1
-                for step in steps.step.unique() if int(step) // int(config["K"]) > 0}
+                for step in successful_steps.step.unique() if int(step) // int(config["K"]) > 0}
     for _, row in left.iterrows():
         raw = row.beta_dp_raw
         assert _bool(row.raw_finite) is (_float_class(raw) == "finite")
@@ -219,7 +242,7 @@ def _validate_controller(config, frame, interval, method, refresh, certificates)
     assert {(int(row.refresh_step), row.layer) for _, row in frame.iterrows()} == {
         (int(step), layer) for step in refresh_step_values for layer in LAYERS
     }
-    assert set(frame.layer) == set(LAYERS)
+    assert set(frame.layer) == (set(LAYERS) if expected_rows else set())
     _assert_finite_columns(frame, ["refresh_step", "interval_index", "previous_interval_n_steps",
                                   "trace_A", "trace_G", "trace_F"], nullable=())
     if "beta_algorithm_active" in frame:
@@ -363,6 +386,37 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
     else:
         assert 0 <= completed <= total
         assert completed in (summary["diverged_step"], summary["diverged_step"] + 1)
+    privacy = summary["privacy_steps"]
+    observations = summary["beta_observation_steps"]
+    stage = summary["divergence_stage"]
+    for key in ("privacy_steps", "beta_observation_steps", "divergence_stage", "planned_privacy_steps"):
+        assert meta[key] == summary[key]
+    assert summary["planned_privacy_steps"] == total
+    assert type(privacy) is int and type(observations) is int
+    if status == "completed":
+        assert stage is None and privacy == completed == total
+    else:
+        assert completed == summary["diverged_step"] < total
+        assert stage in ("loss", "noisy_gradient", "filtered_gradient", "optimizer_exception", "parameters")
+        assert privacy == completed + int(stage != "loss")
+    expected_observations = completed + int(stage in ("filtered_gradient", "optimizer_exception", "parameters"))
+    assert observations == (expected_observations if beta_measurement_enabled else 0)
+    assert 0 <= observations <= privacy <= total
+    assert [row["step"] for row in pairing["privacy"]] == list(range(privacy))
+    keys = ("step", "batch_indices", "noise_rng_before", "noise_rng_after")
+    _compare_pairing(pairing["private"], pairing["privacy"][:completed], keys)
+    for index, event in enumerate(pairing["privacy"]):
+        assert len(event["batch_indices"]) == config["batch_size"]
+        assert len(set(event["batch_indices"])) == config["batch_size"]
+        assert all(0 <= value < (config["train_subset"] or 60000) for value in event["batch_indices"])
+        assert event["noise_rng_before"] != event["noise_rng_after"]
+        if index:
+            assert event["noise_rng_before"] == pairing["privacy"][index-1]["noise_rng_after"]
+    assert all(row["parameters_finite"] for row in pairing["private"])
+    if stage != "optimizer_exception":
+        assert summary["parameters_finite"] is (stage != "parameters")
+    if status == "completed" and completed:
+        assert summary["final_model_hash"] == pairing["private"][-1]["model_hash"]
     frames = {name: pd.read_csv(root / f"{name}.csv") for name in (
         "train_metrics", "layer_metrics", "refresh_metrics", "beta_step_metrics",
         "beta_interval_metrics", "beta_controller_metrics", "eigenbin_metrics")}
@@ -370,28 +424,44 @@ def _validate_run(config, runs, spec, current_fp, current_provenance):
     assert train.step.tolist() == list(range(completed))
     assert len(layer) == completed * len(LAYERS)
     assert eigenbin.empty
-    _validate_beta_steps(config, beta_step, seed, spec["run_id"], completed,
+    _validate_beta_steps(config, beta_step, seed, spec["run_id"], observations,
                          method=spec["method"], controller=controller,
                          oracle_enabled=oracle_enabled,
                          measurement_enabled=beta_measurement_enabled)
     if oracle_enabled and beta_measurement_enabled:
-        _validate_intervals(config, beta_step, interval, spec["method"])
+        _validate_intervals(config, beta_step, interval, spec["method"], train)
     else:
         assert interval.empty
+    assert beta_step.dp_observation_recorded.map(_bool).all()
+    assert beta_step.optimizer_step_completed.map(_bool).tolist() == [int(value) < completed for value in beta_step.step]
+    invalid_steps = sorted(set(int(row.step) for _, row in beta_step.iterrows() if not _bool(row.diagnostic_valid)))
+    assert summary["beta_diagnostic_nonfinite_steps"] == invalid_steps
+    assert summary["beta_diagnostics_all_finite"] is (not invalid_steps)
+    errors = sorted({int(row.step) for frame in (train, beta_step)
+                     for _, row in frame.iterrows() if pd.notna(row.oracle_diagnostic_error)})
+    assert summary["oracle_diagnostic_error_steps"] == errors
+    if status == "diverged":
+        for key in ("final_accuracy", "accuracy_auc", "late_mean_accuracy", "T50", "T70", "T80", "T85", "T90"):
+            assert summary[key] is None
     expected_refresh = _expected_refresh_steps(status, completed, summary["diverged_step"], total, config["K"])
+    if not meta.get("synthetic_measurement_enabled", True):
+        assert spec["method"] == DP_METHOD and not beta_measurement_enabled
+        expected_refresh = []
     assert refresh.step.tolist() == expected_refresh
     assert (refresh.refresh_index.to_numpy() == refresh.step.to_numpy() // config["K"]).all()
     assert [row["step"] for row in pairing["private"]] == list(range(completed))
     assert [row["step"] for row in pairing["synthetic"]] == expected_refresh
     assert refresh.step.tolist() == [row["step"] for row in pairing["synthetic"]]
     _validate_controller(config, controller, interval, spec["method"], refresh, load(root / "h_certificates.json"))
+    for _, row in interval.iterrows():
+        if _bool(row.applied_to_training):
+            next_control = controller[(controller.interval_index == int(row.interval_index) + 1)
+                                      & (controller.layer == row.layer)]
+            assert len(next_control) == 1
+            _assert_derived(row.next_beta_train, next_control.iloc[0].beta_train, "next_beta_train")
     assert summary["number_of_refreshes"] == len(expected_refresh)
     assert summary["noise_multiplier"] == meta["noise_multiplier"]
-    if not config["smoke"]:
-        assert math.isclose(summary["noise_multiplier"], 1.068115234375, rel_tol=0.0, abs_tol=1e-12)
-        assert math.isclose(summary["epsilon_spent"], 0.995693195331761, rel_tol=0.0, abs_tol=1e-10)
-    assert math.isclose(summary["sample_rate"], config["batch_size"] / (config["train_subset"] or 60000))
-    assert 0 < summary["epsilon_spent"] <= config["epsilon"] + .02
+    _validate_privacy_budget(config, summary)
     if spec["method"] == DP_METHOD:
         assert summary["active_state_bytes"] == 0 and not meta["beta_algorithm_active"]
         assert refresh.measurement_only.all()
@@ -485,6 +555,9 @@ def validate(config, runs, output, require_tests=True):
         base = same_seed[0][2]
         for record in same_seed[1:]:
             pair = record[2]
+            common_privacy = min(len(base["privacy"]), len(pair["privacy"]))
+            _compare_pairing(base["privacy"][:common_privacy], pair["privacy"][:common_privacy],
+                             ("step", "batch_indices", "noise_rng_before", "noise_rng_after"))
             common = min(len(base["private"]), len(pair["private"]))
             _compare_pairing(base["private"][:common], pair["private"][:common],
                              ("step", "batch_indices", "noise_rng_before", "noise_rng_after"))
