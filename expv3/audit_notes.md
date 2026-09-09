@@ -28,3 +28,11 @@ Implementation consequence: ExpV3 performs one ExpV1 eigendecomposition per
 refresh, reuses that eigensystem for both adaptive and beta=1 counterfactual
 gains, and lets only past DP-safe scalar observations update the controller.
 
+Hardening consequence: `capture_deployable_beta_observations` reads only
+pre-Wiener `p.grad`; `capture_oracle_beta_diagnostics` is a separate
+research-only path reading the clean clipped gradient.  Controller rows now
+retain exact previous-interval numerators, denominators, beta values, and
+cumulative decision counts.  Runtime bookkeeping distinguishes adaptive beta
+observation/controller time from research diagnostics and measurement-only
+DP-SGD work.  The validator recomputes step, interval, controller, H, runtime,
+and root-seed invariants rather than trusting derived artifact fields.

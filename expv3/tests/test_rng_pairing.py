@@ -23,3 +23,12 @@ def test_determinism():
         y = torch.randint(0, 10, (32,))
     assert x.equal(y) and a.audit() == b.audit()
 
+
+def test_training_determinism(config, tiny_data, tmp_path):
+    from expv3.tests.test_diagnostic_isolation import _trajectory
+    from expv3.train_expv3 import train
+
+    for run in ("dp_sgd_lr0p50", "dp_fisher_wiener_adaptive_beta_lr0p50"):
+        train(config, 42, run, tmp_path / f"a_{run}", tiny_data)
+        train(config, 42, run, tmp_path / f"b_{run}", tiny_data)
+        assert _trajectory(tmp_path / f"a_{run}") == _trajectory(tmp_path / f"b_{run}")

@@ -88,6 +88,7 @@ def plot(config, runs, output, require_tests=True):
         if spec["method"] != FISHER_METHOD:
             continue
         frame = pd.concat([controller_frames[(seed, spec["run_id"])] for seed in config["seeds"]])
+        frame = frame[frame.interval_index > 0]
         rates = frame.groupby("layer").beta_fallback_used.apply(lambda x: (x.astype(str).str.lower() == "true").mean())
         plt.plot(list(rates.index), rates.values, marker="o", label=f"lr={spec['learning_rate']:.2f}")
     plt.ylabel("Fallback rate"); plt.legend(fontsize=7); save("fallback_rate_by_layer_lr")
@@ -127,4 +128,3 @@ def plot(config, runs, output, require_tests=True):
 
 if __name__ == "__main__":
     plot(*cli())
-

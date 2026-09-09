@@ -29,6 +29,18 @@ def _late(frame, total):
     return frame[frame.step + 1 > total / 2]
 
 
+def controller_decision_rates(frame):
+    """Return adaptive decision rates, excluding interval zero."""
+    if frame.empty or frame.method.iloc[0] != FISHER_METHOD:
+        return None, None
+    decisions = frame[frame.interval_index > 0]
+    if decisions.empty:
+        return None, None
+    fallback = decisions.beta_fallback_used.map(lambda x: str(x).lower() == "true")
+    accepted = decisions.beta_update_accepted.map(lambda x: str(x).lower() == "true")
+    return float(fallback.mean()), float(accepted.mean())
+
+
 def summarize(config, runs, output, require_tests=True):
     validate(config, runs, output, require_tests=require_tests)
     summaries, controller_parts, layer_parts, train_parts, interval_parts = [], [], [], [], []
@@ -51,6 +63,7 @@ def summarize(config, runs, output, require_tests=True):
             method, lr, seed, layer = keys
             raw = group.beta_raw_previous
             train = group.beta_train
+            fallback_rate, accepted_update_rate = controller_decision_rates(group)
             train_oracle_ratios, lag_errors, observability = [], [], []
             for _, row in group.iterrows():
                 current = intervals[(intervals.layer == row.layer) &
@@ -68,8 +81,8 @@ def summarize(config, runs, output, require_tests=True):
                 "number_of_intervals": len(group), "median_beta_train": _median(train),
                 "mean_beta_train": _mean(train), "median_beta_raw": _median(raw),
                 "raw_negative_rate": float((pd.to_numeric(raw, errors="coerce") < 0).mean()),
-                "fallback_rate": float(group.beta_fallback_used.map(lambda x: str(x).lower() == "true").mean()),
-                "accepted_update_rate": float(group.beta_update_accepted.map(lambda x: str(x).lower() == "true").mean()),
+                "fallback_rate": fallback_rate,
+                "accepted_update_rate": accepted_update_rate,
                 "median_beta_train_to_oracle_ratio": _median(train_oracle_ratios),
                 "median_lag_log_error": _median(lag_errors),
                 "median_observability_snr": _median(observability),

@@ -70,6 +70,7 @@ TRAIN_FIELDS = [
     "signal_amplitude_retention", "effective_signal_lr", "optimizer_update_norm",
     "clean_reference_update_norm", "update_to_clean_reference_ratio",
     "lr_compensation_to_dp_sgd_0p5", "refresh_time", "diagnostic_spectrum_time",
+    "beta_observation_time", "oracle_diagnostic_time", "reconstruction_diagnostic_time",
     "wiener_filter_time", "beta_controller_time", "active_state_bytes",
     "diagnostics_finite", "beta_diagnostics_finite",
 ]
@@ -116,6 +117,7 @@ BETA_CONTROLLER_FIELDS = [
     "H_q10", "H_q25", "H_q50", "H_q75", "H_q90", "H_beta1_mean", "H_beta1_q10",
     "H_beta1_q50", "H_beta1_q90", "H_fro_ratio_vs_beta1", "H_hash", "H_hash_copy",
     "H_beta1_hash", "H_beta1_hash_copy", "H_stats_digest", "H_beta1_stats_digest",
+    "beta_algorithm_active",
 ]
 
 
@@ -187,29 +189,35 @@ def build_trace_state(covariances):
     return result
 
 
-def beta_capture(model, trace_state, sigma, config, batch_size, seed, run_id, method,
-                 learning_rate, step, refresh_index, active_betas, active_source):
-    """Create research rows from clean reference and pre-Wiener DP tensors.
+def capture_deployable_beta_observations(model, trace_state, sigma, config, batch_size,
+                                         seed, run_id, method, learning_rate, step,
+                                         refresh_index, active_betas, active_source):
+    """Capture only pre-Wiener DP observations for the beta controller.
 
-    Only scalar values leave this function.  The controller receives its own
-    noisy scalar arguments below, never the clean tensor or actual noise.
+    This function is a one-way boundary: it reads only ``p.grad`` and the
+    public synthetic trace state.  Oracle values are captured separately.
     """
     rows = []
     r = beta_estimation.noise_variance(sigma, config["max_grad_norm"], batch_size)
     for name in LAYERS:
         layer = getattr(model._module, name)
-        clean = pack_layer_gradient(layer, "summed_grad")
         noisy = pack_layer_gradient(layer, "grad")
         dimension = int(noisy.numel())
         trace = trace_state[name]
-        estimate = beta_estimation.single_step_beta(
-            float(clean.double().square().sum()), float(noisy.double().square().sum()),
-            dimension, trace["trace_F"], r,
-        )
+        noisy_energy = float(noisy.double().square().sum())
+        expected_noise = float(dimension) * r
+        debiased = noisy_energy - expected_noise
+        raw = beta_estimation.safe_ratio(debiased, trace["trace_F"])
         rows.append({
             "seed": seed, "run_id": run_id, "method": method,
             "learning_rate": float(learning_rate), "step": step, "layer": name,
-            "r": r, "dimension": dimension, **trace, **estimate,
+            "r": r, "dimension": dimension, **trace,
+            "noisy_gradient_energy": noisy_energy,
+            "expected_noise_energy": expected_noise,
+            "noise_debiased_energy_raw": debiased,
+            "beta_dp_step_raw": raw,
+            "beta_dp_step_positive": max(raw, 0.0),
+            "beta_dp_step_negative": raw < 0,
             "refresh_index": refresh_index,
             "active_beta_train": (active_betas[name] if isinstance(active_betas, dict) else active_betas),
             "active_beta_source_interval": active_source,
@@ -217,10 +225,32 @@ def beta_capture(model, trace_state, sigma, config, batch_size, seed, run_id, me
     return rows
 
 
+def capture_oracle_beta_diagnostics(model, trace_state):
+    """Capture clean research diagnostics, separate from deployable control."""
+    rows = {}
+    for name in LAYERS:
+        layer = getattr(model._module, name)
+        clean = pack_layer_gradient(layer, "summed_grad")
+        clean_energy = float(clean.double().square().sum())
+        rows[name] = {
+            "clean_signal_energy": clean_energy,
+            "beta_oracle_step": beta_estimation.safe_ratio(
+                clean_energy, trace_state[name]["trace_F"]
+            ),
+        }
+    return rows
+
+
+# Compatibility name for the pre-hardening helper.  It points only to the
+# deployable implementation and never to the oracle capture path.
+beta_capture = capture_deployable_beta_observations
+
+
 def private_update(model, active, optimizer, rng, sigma, config, batch_size, method,
                    learning_rate, trace_state=None, controller=None, diagnostics=True,
                    beta_measurement=True, refresh_index=None, step=0, run_id=None,
-                   seed=None, diagnostic_state=None, active_beta=None, active_source=None):
+                   seed=None, diagnostic_state=None, active_beta=None, active_source=None,
+                   oracle_diagnostics=True):
     """Execute one DP mechanism, optional adaptive filter, and SGD update.
 
     The fixed order is: per-sample gradients -> global clipping/noise -> capture
@@ -228,7 +258,9 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
     """
     if method not in (DP_METHOD, FISHER_METHOD):
         raise ValueError(method)
-    diagnostic_seconds = 0.0
+    reconstruction_seconds = 0.0
+    oracle_seconds = 0.0
+    beta_observation_seconds = 0.0
     controller_seconds = 0.0
     diagnostics_ok = True
     clip_rate = None
@@ -240,43 +272,66 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
         )
         clip_rate = float((sq.sqrt() > config["max_grad_norm"]).float().mean())
         sync(model)
-        diagnostic_seconds += time.perf_counter() - started
+        reconstruction_seconds += time.perf_counter() - started
 
     audit = {"noise_rng_before": rng.audit()}
     with rng.use():
         clip_and_noise_gradients(
             model, noise_multiplier=sigma, max_grad_norm=config["max_grad_norm"],
-            batch_size=batch_size, store_summed_grad=True,
+            batch_size=batch_size, store_summed_grad=bool(oracle_diagnostics),
         )
     audit["noise_rng_after"] = rng.audit()
     if not all_finite(p.grad for p in model.parameters()):
         raise DivergenceError(step, "noisy gradient")
 
     noisy_for_diagnostics = None
-    beta_rows = []
-    if diagnostics or beta_measurement:
+    deployable_rows = []
+    oracle_rows = {}
+    if diagnostics and oracle_diagnostics:
         sync(model)
         started = time.perf_counter()
         noisy_for_diagnostics = {
             name: pack_layer_gradient(getattr(model._module, name), "grad") for name in LAYERS
         }
-        if beta_measurement:
-            beta_rows = beta_capture(
-                model, trace_state, sigma, config, batch_size, seed, run_id, method,
-                learning_rate, step, refresh_index, active_beta, active_source,
-            )
         sync(model)
-        diagnostic_seconds += time.perf_counter() - started
+        reconstruction_seconds += time.perf_counter() - started
+
+    if beta_measurement:
+        sync(model)
+        started = time.perf_counter()
+        # The deployable beta_capture observation is constructed before the
+        # Wiener filter.
+        deployable_rows = capture_deployable_beta_observations(
+            model, trace_state, sigma, config, batch_size, seed, run_id, method,
+            learning_rate, step, refresh_index, active_beta, active_source,
+        )
+        sync(model)
+        beta_observation_seconds += time.perf_counter() - started
 
     if controller is not None:
         started = time.perf_counter()
-        for row in beta_rows:
-            # Deliberately pass only DP-safe scalar observations.
+        for row in deployable_rows:
             controller.observe(
                 row["layer"], row["noisy_gradient_energy"],
                 row["expected_noise_energy"], row["trace_F"],
             )
         controller_seconds += time.perf_counter() - started
+
+    if oracle_diagnostics:
+        sync(model)
+        started = time.perf_counter()
+        oracle_rows = capture_oracle_beta_diagnostics(model, trace_state)
+        sync(model)
+        oracle_seconds += time.perf_counter() - started
+
+    beta_rows = []
+    for row in deployable_rows:
+        merged = dict(row)
+        merged.update(oracle_rows.get(row["layer"], {
+            "clean_signal_energy": None, "beta_oracle_step": None,
+        }))
+        merged["diagnostic_valid"] = beta_estimation.beta_step_diagnostic_is_finite(merged)
+        beta_rows.append(merged)
 
     sync(model)
     started = time.perf_counter()
@@ -291,7 +346,7 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
 
     optimizer.step()
     rows, layer_rows = {}, []
-    if diagnostics:
+    if diagnostics and oracle_diagnostics:
         sync(model)
         started = time.perf_counter()
         try:
@@ -308,14 +363,18 @@ def private_update(model, active, optimizer, rng, sigma, config, batch_size, met
             rows = {"diagnostic_error": True}
             layer_rows = [{"layer": name, "diagnostic_error": True} for name in LAYERS]
         sync(model)
-        diagnostic_seconds += time.perf_counter() - started
+        reconstruction_seconds += time.perf_counter() - started
     rows.update(clip_rate=clip_rate, wiener_filter_time=filter_time,
-                beta_controller_time=controller_seconds)
+                beta_controller_time=controller_seconds,
+                beta_observation_time=beta_observation_seconds,
+                oracle_diagnostic_time=oracle_seconds,
+                reconstruction_diagnostic_time=reconstruction_seconds)
     rows["beta_diagnostics_finite"] = (
         all(beta_estimation.beta_step_diagnostic_is_finite(row) for row in beta_rows)
         if beta_measurement else True
     )
-    return rows, layer_rows, beta_rows, audit, diagnostic_seconds, controller_seconds
+    return (rows, layer_rows, beta_rows, audit,
+            reconstruction_seconds + oracle_seconds, controller_seconds)
 
 
 class Indexed(Dataset):
@@ -331,7 +390,8 @@ class Indexed(Dataset):
 
 
 def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall,
-             diagnostic_seconds, controller_seconds, active, status, diverged_step):
+             diagnostic_seconds, controller_seconds, active, status, diverged_step,
+             oracle_diagnostics=True, beta_measurement=True):
     evaluations = [row for row in rows if row.get("test_accuracy") is not None]
     finite_evaluations = [row for row in evaluations if value_finite(row.get("test_accuracy"))]
     accuracies = [float(row["test_accuracy"]) for row in finite_evaluations]
@@ -350,7 +410,17 @@ def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall
     total_refresh = sum(float(row["refresh_time"]) for row in refreshes)
     measurement_refresh = sum(float(row["refresh_time"]) for row in refreshes if row["measurement_only"])
     spectrum = sum(float(row["diagnostic_spectrum_time"]) for row in refreshes)
+    beta_observation = sum(float(row.get("beta_observation_time", 0.0)) for row in rows)
+    oracle_diagnostic = sum(float(row.get("oracle_diagnostic_time", 0.0)) for row in rows)
+    reconstruction_diagnostic = sum(float(row.get("reconstruction_diagnostic_time", 0.0)) for row in rows)
     filter_time = sum(float(row.get("wiener_filter_time", 0.0)) for row in rows)
+    total_controller_time = sum(float(row.get("beta_controller_time", 0.0)) for row in rows)
+    total_controller_time += sum(float(row.get("beta_controller_time", 0.0)) for row in refreshes)
+    if spec["method"] == FISHER_METHOD:
+        research_overhead = oracle_diagnostic + reconstruction_diagnostic + spectrum
+    else:
+        research_overhead = (oracle_diagnostic + reconstruction_diagnostic + spectrum
+                             + beta_observation + measurement_refresh)
     prefix_late = float(np.mean(late)) if late else None
     return {
         "seed": spec["seed"], "run_id": spec["run_id"], "method": spec["method"],
@@ -375,11 +445,14 @@ def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall
         "final_model_hash": digest(model.parameters()),
         "parameters_finite": all_finite(model.parameters()), "wall_time": wall,
         "diagnostic_seconds": diagnostic_seconds,
-        "research_overhead_seconds": diagnostic_seconds + measurement_refresh,
-        "core_training_runtime": wall - diagnostic_seconds - measurement_refresh,
+        "research_overhead_seconds": research_overhead,
+        "core_training_runtime": wall - research_overhead,
         "total_refresh_time": total_refresh,
         "total_measurement_only_refresh_time": measurement_refresh,
-        "total_beta_controller_time": controller_seconds,
+        "total_beta_controller_time": total_controller_time,
+        "total_beta_observation_time": beta_observation,
+        "total_oracle_diagnostic_time": oracle_diagnostic,
+        "total_reconstruction_diagnostic_time": reconstruction_diagnostic,
         "total_wiener_filter_time": filter_time,
         "total_diagnostic_spectrum_time": spectrum,
         "number_of_refreshes": len(refreshes),
@@ -393,11 +466,15 @@ def _summary(config, spec, model, rows, refreshes, accountant, sigma, step, wall
         "beta_algorithm_active": spec["method"] == FISHER_METHOD,
         "filter_position": "after global clipping and DP Gaussian noise",
         "synthetic_fisher_role": "measurement_only_for_dp_sgd" if spec["method"] == DP_METHOD else "training_filter_and_measurement",
-        "contains_non_dp_oracle": True, "release_safe_under_dp": False,
+        "contains_non_dp_oracle": bool(oracle_diagnostics), "release_safe_under_dp": False,
         "deployable_beta_controller_is_postprocessing": True,
         "deployable_beta_estimator_is_postprocessing": True,
         "oracle_is_research_only": True, "actual_noise_saved": False,
         "private_fisher_used": False,
+        "oracle_diagnostics_enabled": bool(oracle_diagnostics),
+        "beta_measurement_enabled": bool(beta_measurement),
+        "deployable_beta_path_reads_clean_gradient": False,
+        "oracle_path_separate_from_controller": True,
     }
 
 
@@ -435,7 +512,7 @@ def _controller_rows(config, spec, step, interval, trace_state, active, beta1_st
             })
             counts = controller.snapshot(name)
         prev = previous.get(name, {})
-        layer_source = source_interval if prev else None
+        layer_source = source_interval if interval > 0 else None
         layer_accepted = prev.get("accepted", False) if prev else False
         layer_fallback = prev.get("fallback", False) if prev else False
         layer_reason = prev.get("fallback_reason", reason) if prev else reason
@@ -454,15 +531,32 @@ def _controller_rows(config, spec, step, interval, trace_state, active, beta1_st
             "fallback_count": counts.get("fallback_count", 0), **trace,
             "beta_scaled_trace_F": (beta * trace["trace_F"] if beta is not None else None),
             **current_stats, **beta1_stats, **hashes,
+            "beta_algorithm_active": spec["method"] == FISHER_METHOD,
         })
     return rows
 
 
-def _enrich_intervals(intervals, method, refresh_rows, controller_rows):
+def _enrich_intervals(intervals, method, refresh_rows, controller_rows, beta_steps=None, K=None):
     if not intervals:
         return intervals
-    used = {int(row["refresh_index"]) - 1 for row in refresh_rows
-            if not row["measurement_only"] and int(row["refresh_index"]) > 0}
+    if beta_steps is None:
+        beta_steps = []
+    # A constructed refresh is not evidence that its H was used.  Only a
+    # completed beta step proves that the following interval reached the
+    # private update and consumed that refresh's state.
+    used = set()
+    if method == FISHER_METHOD and beta_steps:
+        # Completed beta steps, rather than constructed refreshes, determine
+        # whether the next interval actually used this estimate.
+        spacing = int(K) if K is not None else (
+            int(refresh_rows[1]["step"]) - int(refresh_rows[0]["step"])
+            if len(refresh_rows) > 1 else 0
+        )
+        if spacing > 0:
+            used = {
+                int(row["step"]) // spacing - 1 for row in beta_steps
+                if int(row["step"]) // spacing > 0
+            }
     next_beta = {}
     for row in controller_rows:
         next_beta[(int(row["interval_index"]), row["layer"])] = row.get("beta_train")
@@ -497,7 +591,7 @@ def _write_artifacts(root, config, spec, rows, layers, refreshes, beta_steps,
 
 
 def train(config, seed, run_name, output, data_override=None, *, diagnostics=True,
-          beta_measurement=True):
+          beta_measurement=True, oracle_diagnostics=True):
     """Run one of the four canonical paired trajectories."""
     check_config(config)
     if seed not in config["seeds"]:
@@ -553,14 +647,17 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         "test": seed + 2, "synthetic": seed + 3, "noise": seed + 4},
         "sampling": "fixed shuffle/drop_last; inherited RDP convention, not Poisson",
         "diagnostics_enabled": diagnostics, "beta_measurement_enabled": beta_measurement,
+        "oracle_diagnostics_enabled": oracle_diagnostics,
         "beta_algorithm_active": spec["method"] == FISHER_METHOD,
         "beta_update_rule": config["beta_update_rule"], "beta_window": config["beta_window"],
         "filter_position": "after global clipping and DP Gaussian noise",
         "synthetic_fisher_role": "measurement_only_for_dp_sgd" if spec["method"] == DP_METHOD else "training_filter_and_measurement",
-        "contains_non_dp_oracle": True, "release_safe_under_dp": False,
+        "contains_non_dp_oracle": bool(oracle_diagnostics), "release_safe_under_dp": False,
         "deployable_beta_controller_is_postprocessing": True,
         "oracle_is_research_only": True, "actual_noise_saved": False,
-        "private_fisher_used": False, "output": str(root),
+        "private_fisher_used": False,
+        "deployable_beta_path_reads_clean_gradient": False,
+        "oracle_path_separate_from_controller": True, "output": str(root),
     }
     save_json(root / "metadata.json", metadata)
 
@@ -570,6 +667,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     active = diagnostic_state = trace_state = beta1_state = None
     controller = AdaptiveBetaController(LAYERS, config["beta_initial"]) if spec["method"] == FISHER_METHOD else None
     current_refresh_index = None
+    current_beta_source_interval = None
     step = 0
     diagnostic_seconds = controller_seconds_total = 0.0
     status, diverged_step = "completed", None
@@ -589,19 +687,25 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                 previous = {}
                 accepted = fallback = False
                 reason = "not_applicable"
-                source_interval = None
+                source_interval = current_beta_source_interval
                 if refreshed:
                     if controller is not None and refresh_index > 0:
                         started_controller = time.perf_counter()
                         previous = controller.finalize_all(interval_index=refresh_index - 1, apply=True)
                         refresh_controller_time += time.perf_counter() - started_controller
-                        source_interval = refresh_index - 1
+                        current_beta_source_interval = refresh_index - 1
+                        source_interval = current_beta_source_interval
                         accepted = all(value["accepted"] for value in previous.values())
                         fallback = any(value["fallback"] for value in previous.values())
                         reasons = {value["fallback_reason"] for value in previous.values()}
                         reason = next(iter(reasons)) if len(reasons) == 1 else "none"
                     elif controller is not None:
+                        current_beta_source_interval = None
+                        source_interval = None
                         reason = "initial"
+                    elif controller is None:
+                        current_beta_source_interval = None
+                        source_interval = None
 
                     sync(model)
                     refresh_started = time.perf_counter()
@@ -683,7 +787,7 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                         diagnostics=diagnostics, beta_measurement=beta_measurement,
                         refresh_index=current_refresh_index, step=step, run_id=run_name, seed=seed,
                         diagnostic_state=diagnostic_state, active_beta=active_beta,
-                        active_source=active_source,
+                        active_source=active_source, oracle_diagnostics=oracle_diagnostics,
                     )
                 except DivergenceError as exc:
                     status, diverged_step = "diverged", exc.step
@@ -723,12 +827,16 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
     summary = _summary(
         config, spec, model, rows, refreshes, accountant, sigma, step, wall,
         diagnostic_seconds, controller_seconds_total, active, status, diverged_step,
+        oracle_diagnostics=oracle_diagnostics, beta_measurement=beta_measurement,
     )
     metadata.update(summary, complete=status == "completed")
     save_json(root / "summary.json", summary)
     save_json(root / "metadata.json", metadata)
-    interval_rows = build_interval_rows(beta_steps, config["beta_window"]) if beta_steps else []
-    interval_rows = _enrich_intervals(interval_rows, spec["method"], refreshes, controller_rows)
+    interval_rows = (build_interval_rows(beta_steps, config["beta_window"])
+                     if beta_steps and oracle_diagnostics else [])
+    interval_rows = _enrich_intervals(
+        interval_rows, spec["method"], refreshes, controller_rows, beta_steps, config["K"]
+    )
     try:
         _write_artifacts(
             root, config, spec, rows, layer_rows, refreshes, beta_steps,

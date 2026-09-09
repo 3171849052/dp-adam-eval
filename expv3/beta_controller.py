@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import math
 
 
-FALLBACK_REASONS = ("initial", "none", "negative", "nonfinite")
+FALLBACK_REASONS = ("initial", "none", "negative", "nonfinite", "not_applicable")
 
 
 @dataclass
@@ -130,4 +130,3 @@ class AdaptiveBetaController:
 
     def finalize_all(self, interval_index=None, apply=True):
         return self.finalize_interval(interval_index=interval_index, apply=apply)
-
