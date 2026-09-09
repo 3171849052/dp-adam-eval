@@ -1,0 +1,13 @@
+aggregation,seed,n_runs,method,learning_rate,layer,sample_count,median_lag_log10_error,mean_lag_log10_error,positive_lag_coverage,spearman_lag
+run,42,1,dp_sgd,0.1,conv1,1,,,0.0,
+run,42,1,dp_sgd,0.1,conv2,1,3.474970525965406,3.474970525965406,1.0,
+run,42,1,dp_sgd,0.1,fc1,1,4.359155762714389,4.359155762714389,1.0,
+run,42,1,dp_sgd,0.1,fc2,1,3.982459225999376,3.982459225999376,1.0,
+run,42,1,dp_fisher_wiener,0.1,conv1,1,,,0.0,
+run,42,1,dp_fisher_wiener,0.1,conv2,1,3.3715221032076887,3.3715221032076887,1.0,
+run,42,1,dp_fisher_wiener,0.1,fc1,1,2.909354195691929,2.909354195691929,1.0,
+run,42,1,dp_fisher_wiener,0.1,fc2,1,2.5495662065650992,2.5495662065650992,1.0,
+run,42,1,dp_fisher_wiener,0.8,conv1,1,,,0.0,
+run,42,1,dp_fisher_wiener,0.8,conv2,1,2.8981738070303664,2.8981738070303664,1.0,
+run,42,1,dp_fisher_wiener,0.8,fc1,1,2.943276038524968,2.943276038524968,1.0,
+run,42,1,dp_fisher_wiener,0.8,fc2,1,2.6208805259560704,2.6208805259560704,1.0,

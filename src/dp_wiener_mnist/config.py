@@ -37,9 +37,9 @@ class PrivacyConfig:
     delta: float = 1e-5
     max_grad_norm: float = 1.0
     accountant: str = "rdp"
-    sampling: str = "fixed_shuffle_drop_last"
-    accounting_convention: str = "inherited_rdp_sample_rate_convention"
-    poisson_sampling: bool = False
+    sampling: str = "poisson"
+    accounting_convention: str = "poisson_rdp"
+    poisson_sampling: bool = True
 
 
 @dataclass
@@ -60,11 +60,6 @@ class RuntimeConfig:
 
 
 @dataclass
-class LoggingConfig:
-    eval_interval: int = 100
-
-
-@dataclass
 class OutputConfig:
     root: str = "outputs"
 
@@ -79,7 +74,6 @@ class Config:
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
     wiener: WienerConfig = field(default_factory=WienerConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
-    logging: LoggingConfig = field(default_factory=LoggingConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
 
     def to_dict(self) -> dict:
@@ -131,12 +125,9 @@ class Config:
             (self.training.momentum, 0),
             (self.training.weight_decay, 0),
             (self.privacy.accountant, "rdp"),
-            (self.privacy.sampling, "fixed_shuffle_drop_last"),
-            (
-                self.privacy.accounting_convention,
-                "inherited_rdp_sample_rate_convention",
-            ),
-            (self.privacy.poisson_sampling, False),
+            (self.privacy.sampling, "poisson"),
+            (self.privacy.accounting_convention, "poisson_rdp"),
+            (self.privacy.poisson_sampling, True),
             (self.wiener.beta, 1),
             (self.wiener.covariance_ridge, 1e-5),
             (self.wiener.synthetic_distribution, "pink_noise"),
@@ -156,7 +147,6 @@ class Config:
             self.wiener.refresh_interval,
             self.wiener.synthetic_samples,
             self.runtime.threads,
-            self.logging.eval_interval,
         ]
         if any(v <= 0 for v in positive) or not 0 < self.privacy.delta < 1:
             raise ValueError("Expected positive values and 0 < delta < 1")
@@ -172,7 +162,7 @@ class Config:
             self.data.train_subset is not None
             and self.data.train_subset < self.data.batch_size
         ):
-            raise ValueError("Training subset must contain a whole batch")
+            raise ValueError("Training subset must be at least batch_size")
         if self.runtime.device not in ("auto", "cpu", "cuda", "cuda:0"):
             raise ValueError("Device must be auto, cpu, cuda or cuda:0")
         if not self.output.root.strip() or not self.data.root.strip():

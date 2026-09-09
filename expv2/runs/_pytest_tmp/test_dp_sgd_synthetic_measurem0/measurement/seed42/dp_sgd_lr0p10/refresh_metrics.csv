@@ -1,0 +1,3 @@
+seed,run_id,method,config_fingerprint,step,refresh_index,refresh_time,diagnostic_spectrum_time,active_state_bytes,measurement_only
+42,dp_sgd_lr0p10,dp_sgd,dd6ba0265f44ec1b8885c6adddd5d175420afc500b0a048424ac26b6104eb75f,0,0,0.03155282326042652,0.0,0,True
+42,dp_sgd_lr0p10,dp_sgd,dd6ba0265f44ec1b8885c6adddd5d175420afc500b0a048424ac26b6104eb75f,2,1,0.02977708261460066,0.0,0,True

@@ -1,0 +1,3 @@
+seed,run_id,method,config_fingerprint,step,refresh_index,refresh_time,diagnostic_spectrum_time,active_state_bytes,measurement_only
+42,dp_fisher_wiener_lr0p10,dp_fisher_wiener,3e67cd62a3399a0984603c0f797375b4acfeb07deb6eaa48020a8ac3e16af8af,0,0,0.08961375430226326,0.1153519693762064,10905008,False
+42,dp_fisher_wiener_lr0p10,dp_fisher_wiener,3e67cd62a3399a0984603c0f797375b4acfeb07deb6eaa48020a8ac3e16af8af,2,1,0.04450995847582817,0.004610351286828518,10905008,False

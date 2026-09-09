@@ -1,71 +1,286 @@
-"""Unique experiment directories and immediately flushed metrics/logs."""
+"""Per-run paths, complete protocol names, metadata, and durable metrics."""
+
+from __future__ import annotations
 
 import csv
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from decimal import Decimal
 import json
 import logging
-from datetime import datetime
+import os
 from pathlib import Path
+import re
+from typing import Any, Mapping
+
 import yaml
 
-FIELDS = [
-    "step",
+
+METRICS_FIELDS = (
     "epoch",
-    "algorithm",
-    "learning_rate",
+    "global_step",
+    "privacy_steps",
     "train_loss",
     "test_loss",
     "test_accuracy",
     "epsilon_spent",
+    "noise_multiplier",
+    "sample_rate",
+    "expected_batch_size",
+    "mean_sampled_batch_size",
+    "total_sampled_examples",
     "clip_rate",
     "gradient_norm_after_dp",
-    "filter_refresh",
-    "refresh_time",
-    "filter_time",
     "filtered_gradient_norm",
+    "refresh_count",
+    "mean_refresh_time",
+    "mean_filter_time",
     "active_state_bytes",
-]
+)
 
 
-def write_json(path: Path, value: dict) -> None:
+@dataclass(frozen=True)
+class RunPaths:
+    """All files belonging to one prepared experiment directory."""
+
+    directory: Path
+    config: Path
+    resolved_config: Path
+    metrics: Path
+    summary: Path
+    train_log: Path
+
+
+def _format_number(value: float | int) -> str:
+    """Format a finite number as a stable, readable path-name token."""
+    number = Decimal(str(value))
+    if not number.is_finite():
+        raise ValueError("run name values must be finite")
+    if number == number.to_integral_value():
+        return str(number.quantize(Decimal("1")))
+    if abs(number) < Decimal("0.001"):
+        text = format(number.normalize(), "E").replace("E", "e")
+        text = re.sub(r"e([+-])0+(\d+)$", r"e\1\2", text)
+        return text.replace("e+", "e")
+    return format(number.normalize(), "f")
+
+
+def _format_name_component(value: object) -> str:
+    """Convert an identifier to a safe, non-empty path-name component."""
+    component = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value).strip())
+    component = component.strip(".-_")
+    if not component:
+        raise ValueError("run name components must contain a path-safe character")
+    return component
+
+
+def _value(value: object) -> str:
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (int, float)):
+        return _format_number(value)
+    return _format_name_component(value)
+
+
+def _optional_value(value: int | None) -> str:
+    return "all" if value is None else _value(value)
+
+
+def format_run_name(config, timestamp: datetime | None = None) -> str:
+    """Encode every effective scalar experiment setting in a stable name."""
+    stamp = timestamp or datetime.now()
+    c = config
+    tokens = [
+        f"{stamp:%Y%m%d-%H%M%S}",
+        _format_name_component(c.model.name),
+        _format_name_component(c.data.dataset),
+        _format_name_component(c.algorithm),
+        f"s{_value(c.seed)}",
+        f"ep{_value(c.training.epochs)}",
+        f"b{_value(c.data.batch_size)}",
+        f"eb{_value(c.data.eval_batch_size)}",
+        f"lr{_value(c.training.learning_rate)}",
+        f"opt{_format_name_component(c.training.optimizer)}",
+        f"mom{_value(c.training.momentum)}",
+        f"wd{_value(c.training.weight_decay)}",
+        f"eps{_value(c.privacy.epsilon)}",
+        f"d{_value(c.privacy.delta)}",
+        f"C{_value(c.privacy.max_grad_norm)}",
+        f"acc{_format_name_component(c.privacy.accountant)}",
+        f"samp{_format_name_component(c.privacy.sampling)}",
+        f"acct{_format_name_component(c.privacy.accounting_convention)}",
+        f"pois{_value(c.privacy.poisson_sampling)}",
+        f"beta{_value(c.wiener.beta)}",
+        f"K{_value(c.wiener.refresh_interval)}",
+        f"M{_value(c.wiener.synthetic_samples)}",
+        f"ridge{_value(c.wiener.covariance_ridge)}",
+        f"syn{_format_name_component(c.wiener.synthetic_distribution)}",
+        f"tr{_optional_value(c.data.train_subset)}",
+        f"te{_optional_value(c.data.test_subset)}",
+        f"nw{_value(c.data.num_workers)}",
+        f"dev{_format_name_component(c.runtime.device)}",
+        f"gpu{_value(c.runtime.gpu)}",
+        f"th{_value(c.runtime.threads)}",
+        f"det{_value(c.runtime.deterministic)}",
+    ]
+    return "_".join(tokens)
+
+
+def _run_paths(directory: Path) -> RunPaths:
+    return RunPaths(
+        directory=directory,
+        config=directory / "config.yaml",
+        resolved_config=directory / "resolved_config.yaml",
+        metrics=directory / "metrics.csv",
+        summary=directory / "summary.json",
+        train_log=directory / "train.log",
+    )
+
+
+def run_paths_from_directory(directory: str | Path) -> RunPaths:
+    """Resolve a directory previously created by ``--prepare-run``."""
+    root = Path(directory).resolve()
+    if not root.is_dir() or not (root / "config.yaml").is_file():
+        raise ValueError("run directory must have been created by the runner")
+    return _run_paths(root)
+
+
+def format_tmux_session_name(directory: str | Path) -> str:
+    """Build a deterministic tmux-safe name from a run directory."""
+    run_name = Path(directory).name
+    if not run_name:
+        raise ValueError("run directory must have a name")
+    return re.sub(r"[^A-Za-z0-9_-]", "_", f"dp_wiener_mnist_{run_name}")
+
+
+def create_run_directory(
+    config,
+    *,
+    root: str | Path | None = None,
+    now: datetime | None = None,
+) -> RunPaths:
+    """Create a collision-free second-precision output directory."""
+    output_root = Path(root if root is not None else config.output.root)
+    output_root.mkdir(parents=True, exist_ok=True)
+    timestamp = now or datetime.now()
+    for collision in range(10_000):
+        candidate = output_root / format_run_name(
+            config, timestamp + timedelta(seconds=collision)
+        )
+        try:
+            candidate.mkdir()
+        except FileExistsError:
+            continue
+        paths = _run_paths(candidate)
+        paths.train_log.touch()
+        return paths
+    raise RuntimeError("could not allocate a unique run directory")
+
+
+def write_json(path: Path, value: Mapping[str, Any]) -> None:
+    """Write JSON atomically so summaries survive interruptions."""
     temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
+    temp.write_text(
+        json.dumps(dict(value), indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
     temp.replace(path)
 
 
-def write_yaml(path: Path, value: dict) -> None:
-    path.write_text(yaml.safe_dump(value, sort_keys=False))
+def write_yaml(path: Path, value: Mapping[str, Any]) -> None:
+    path.write_text(yaml.safe_dump(dict(value), sort_keys=False), encoding="utf-8")
+
+
+def write_run_metadata(
+    paths: RunPaths,
+    *,
+    source_yaml: str | None = None,
+    resolved_config: Mapping[str, Any] | None = None,
+    summary: Mapping[str, Any] | None = None,
+) -> None:
+    """Write source/resolved metadata and, when provided, the summary."""
+    paths.directory.mkdir(parents=True, exist_ok=True)
+    if source_yaml is not None:
+        paths.config.write_text(source_yaml, encoding="utf-8")
+    if resolved_config is not None:
+        write_yaml(paths.resolved_config, resolved_config)
+    paths.train_log.touch(exist_ok=True)
+    if summary is not None:
+        write_json(paths.summary, summary)
+
+
+class MetricsCSVWriter:
+    """Append one flushed and fsynced aggregate metric record per epoch."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists() or not self.path.stat().st_size:
+            with self.path.open("w", newline="", encoding="utf-8") as stream:
+                csv.DictWriter(stream, fieldnames=METRICS_FIELDS).writeheader()
+                stream.flush()
+                os.fsync(stream.fileno())
+
+    def append(self, record: Mapping[str, Any]) -> None:
+        if set(record) != set(METRICS_FIELDS):
+            raise ValueError("metrics record must contain exactly the CSV fields")
+        with self.path.open("a", newline="", encoding="utf-8") as stream:
+            csv.DictWriter(stream, fieldnames=METRICS_FIELDS).writerow(record)
+            stream.flush()
+            os.fsync(stream.fileno())
 
 
 class RunLog:
-    def __init__(self, c, source: str):
-        suffix = f"simplecnn_mnist_{c.algorithm}_eps{c.privacy.epsilon:g}_lr{c.training.learning_rate:g}"
-        if c.algorithm == "dp_fisher_wiener":
-            suffix += f"_K{c.wiener.refresh_interval}_M{c.wiener.synthetic_samples}"
-        self.root = Path(c.output.root) / (
-            datetime.now().strftime("%Y%m%d-%H%M%S-%f") + "_" + suffix.replace(".", "p")
-        )
-        self.root.mkdir(parents=True, exist_ok=False)
-        (self.root / "config.yaml").write_text(source)
-        write_yaml(self.root / "resolved_config.yaml", c.to_dict())
-        self.handle = (self.root / "metrics.csv").open("w", newline="")
-        self.writer = csv.DictWriter(self.handle, fieldnames=FIELDS)
-        self.writer.writeheader()
-        self.handle.flush()
-        self.logger = logging.getLogger(str(self.root.resolve()))
+    """Compatibility wrapper used by the trainer and direct Python callers."""
+
+    def __init__(
+        self, c=None, source: str | None = None, *, paths: RunPaths | None = None
+    ):
+        if paths is None:
+            if c is None:
+                raise ValueError("config is required when paths is omitted")
+            paths = create_run_directory(c)
+            write_run_metadata(
+                paths,
+                source_yaml=source
+                if source is not None
+                else yaml.safe_dump(c.to_dict(), sort_keys=False),
+                resolved_config=c.to_dict(),
+            )
+        else:
+            write_run_metadata(paths, source_yaml=source)
+        self.paths = paths
+        self.root = paths.directory
+        self.metrics = MetricsCSVWriter(paths.metrics)
+        self.logger = logging.getLogger(f"dp_wiener_mnist.{self.root.resolve()}")
         self.logger.setLevel(logging.INFO)
         self.logger.propagate = False
-        handler = logging.FileHandler(self.root / "train.log")
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-        self.logger.addHandler(handler)
-        self.logger.info("Run initialized: %s", self.root)
+        self._handler = logging.FileHandler(paths.train_log, encoding="utf-8")
+        self._handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+        )
+        self.logger.addHandler(self._handler)
+        self.logger.info("Run initialized: %s", self.root.resolve())
 
-    def append(self, row: dict) -> None:
-        self.writer.writerow(row)
-        self.handle.flush()
-        self.logger.info("%s", row)
+    def append(self, row: Mapping[str, Any]) -> None:
+        self.metrics.append(row)
+        self.logger.info("Epoch metrics: %s", dict(row))
 
     def close(self) -> None:
-        self.handle.close()
-        for handler in self.logger.handlers[:]:
-            handler.close()
-            self.logger.removeHandler(handler)
+        self._handler.flush()
+        self._handler.close()
+        self.logger.removeHandler(self._handler)
+
+
+__all__ = [
+    "METRICS_FIELDS",
+    "MetricsCSVWriter",
+    "RunLog",
+    "RunPaths",
+    "create_run_directory",
+    "format_run_name",
+    "format_tmux_session_name",
+    "run_paths_from_directory",
+    "write_json",
+    "write_run_metadata",
+    "write_yaml",
+]

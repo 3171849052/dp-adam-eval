@@ -61,14 +61,36 @@ def configure_runtime(c) -> torch.device:
     torch.backends.cudnn.allow_tf32 = False
     torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True)
-    name = c.runtime.device
+    return resolve_device(c.runtime.device)
+
+
+def resolve_device(name: str) -> torch.device:
+    """Resolve a configured logical device without changing global state."""
     if name == "auto":
-        name = "cuda:0" if torch.cuda.is_available() else "cpu"
-    if name.startswith("cuda"):
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA requested but unavailable")
-        name = "cuda:0"
-    return torch.device(name)
+        return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device(name)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA was requested but unavailable")
+    if device.type == "cuda" and device.index not in (None, 0):
+        raise RuntimeError(
+            "CUDA_VISIBLE_DEVICES maps the selected physical GPU to cuda:0; "
+            "runtime.device must be 'cuda' or 'cuda:0'"
+        )
+    return torch.device("cuda:0") if device.type == "cuda" else device
+
+
+def validate_gpu_selection(gpu: int) -> None:
+    """Validate a physical GPU index in an unmodified CUDA visibility view."""
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            f"runtime.gpu={gpu} requested, but CUDA is not available"
+        )
+    count = torch.cuda.device_count()
+    if gpu >= count:
+        raise RuntimeError(
+            f"runtime.gpu={gpu} is invalid: only {count} physical CUDA GPU(s) "
+            "are available"
+        )
 
 
 def require_finite(*tensors: torch.Tensor) -> None:

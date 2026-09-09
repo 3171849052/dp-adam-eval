@@ -21,9 +21,9 @@ privacy:
   delta: 1.0e-05
   max_grad_norm: 1.0
   accountant: rdp
-  sampling: fixed_shuffle_drop_last
-  accounting_convention: inherited_rdp_sample_rate_convention
-  poisson_sampling: false
+  sampling: poisson
+  accounting_convention: poisson_rdp
+  poisson_sampling: true
 wiener:
   beta: 1
   refresh_interval: 2
@@ -35,7 +35,5 @@ runtime:
   gpu: 0
   threads: 4
   deterministic: true
-logging:
-  eval_interval: 1
 output:
   root: outputs

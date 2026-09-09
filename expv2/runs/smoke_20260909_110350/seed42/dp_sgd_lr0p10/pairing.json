@@ -1,0 +1,74 @@
+{
+  "private": [
+    {
+      "step": 0,
+      "batch_indices": [
+        15,
+        8,
+        13,
+        0
+      ],
+      "model_hash": "b4536608215527dac579c2911b7776362f66288b8302f8ef14c51ec356a33b99",
+      "parameters_finite": true,
+      "noise_rng_before": "cb0af0cbec78188e11f2a9b09e1172429646e6e41a1a6ec6f8c7cc4d1cc5fe3a",
+      "noise_rng_after": "65f1068386521d9a79d934198d5f5e293bae913028750436047e4b624d1e9f90"
+    },
+    {
+      "step": 1,
+      "batch_indices": [
+        4,
+        6,
+        2,
+        1
+      ],
+      "model_hash": "642173b3d2f86381d8675d533a9b79fa7ca43a9c0efd1b1a06d15111c6ffc7c3",
+      "parameters_finite": true,
+      "noise_rng_before": "65f1068386521d9a79d934198d5f5e293bae913028750436047e4b624d1e9f90",
+      "noise_rng_after": "1aa2acfa8f9c5a2d8e374b96e18b3c00b057fd47f65ca240654d1eef555aef74"
+    },
+    {
+      "step": 2,
+      "batch_indices": [
+        11,
+        10,
+        9,
+        3
+      ],
+      "model_hash": "b5548b98a4f55184ab46ece787b9fd64d2e11b81bba8ce2f0dc93f80a2577566",
+      "parameters_finite": true,
+      "noise_rng_before": "1aa2acfa8f9c5a2d8e374b96e18b3c00b057fd47f65ca240654d1eef555aef74",
+      "noise_rng_after": "7cd5736528926904f0a5b989e8ecbb5e1e2e42751ce8a3a20d6e5781b7630b3c"
+    },
+    {
+      "step": 3,
+      "batch_indices": [
+        7,
+        14,
+        12,
+        5
+      ],
+      "model_hash": "d5472e36184571e8efa725334f4270c5e19f791149894a78816befa428b652d7",
+      "parameters_finite": true,
+      "noise_rng_before": "7cd5736528926904f0a5b989e8ecbb5e1e2e42751ce8a3a20d6e5781b7630b3c",
+      "noise_rng_after": "44fabfdb469a5958e0938de708daaec3cd02404f9a8fd51f33a8c96732782f72"
+    }
+  ],
+  "synthetic": [
+    {
+      "step": 0,
+      "rng_before": "d5cc346cb8eb9e89a65f88e78b22228fc65d627cc391bb7f3b118589c851cd20",
+      "rng_after": "22e265bbe788482d61600818b380eccb7b1980e7a1903b5a4c53281d682533c1",
+      "samples_hash": "bb1b2e57e42b1ad719cbf971e1ded61c2142637de04cfc2e2e9ce01dc50f7787",
+      "labels_hash": "0bfcbcd7ea1a2fbf6f2b969eb80437a1100d9a8341e1a0428990e0a2300fdc26",
+      "count": 8
+    },
+    {
+      "step": 2,
+      "rng_before": "22e265bbe788482d61600818b380eccb7b1980e7a1903b5a4c53281d682533c1",
+      "rng_after": "b4c9340f7703c981f4e3c421c7032fe126caa074c1992da7c442fbd92183a549",
+      "samples_hash": "d6061892f7c73acf556651aae47ff9c44bc0cfe720fb06ae77ea9c451200d4aa",
+      "labels_hash": "d6b1c4a6c4a1e8cbe43958e171d0dace48879b39026b0c1714254c463b71a990",
+      "count": 8
+    }
+  ]
+}

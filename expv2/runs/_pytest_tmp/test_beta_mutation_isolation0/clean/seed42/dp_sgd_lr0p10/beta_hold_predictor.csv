@@ -1,0 +1,5 @@
+seed,run_id,method,learning_rate,layer,source_interval,target_interval,beta_hold_predictor,beta_oracle_current,hold_prediction_positive,hold_ratio,hold_log10_abs_ratio_error
+42,dp_sgd_lr0p10,dp_sgd,0.1,conv1,0,1,1.0,4.422436508102553,True,0.22611969627327677,0.6456616065611516
+42,dp_sgd_lr0p10,dp_sgd,0.1,conv2,0,1,2275.112864987962,1.2858411327379036,True,1769.3576656267257,3.247815631952817
+42,dp_sgd_lr0p10,dp_sgd,0.1,fc1,0,1,844.4902881917793,0.006257477073807931,True,134956.99276735383,5.130195392350075
+42,dp_sgd_lr0p10,dp_sgd,0.1,fc2,0,1,1.0,0.007579077323796373,True,131.942182046389,2.1203836621218017

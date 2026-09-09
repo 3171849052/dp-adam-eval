@@ -1,8 +1,8 @@
 # DP-Wiener MNIST
 
-将 ExpV1b 的 **DP-SGD / DP-Fisher-Wiener** 抽离为可独立安装、配置和运行的 MNIST 实验。只支持原 SimpleCNN、plain SGD（momentum=0、weight_decay=0）和 RDP accounting。算法迁移以源训练轨迹为优先。
-
-当前工作区原有 `exp*` 文件保留用于历史实验；本工程训练、安装和测试只使用 `src/dp_wiener_mnist`、`config`、`scripts/train.py`、`tests`，不导入历史实验或 sibling checkout。打包仅包含 `dp_wiener_mnist`。可用下述导出命令得到不含历史实验的小仓库。
+这是一个 standalone 的 MNIST 实验工程，保留 SimpleCNN、manual per-example
+global clipping、manual Gaussian mechanism、RDP accountant，以及 DP-SGD 和
+post-DP Fisher-Wiener 两条算法路径。
 
 ## 安装与运行
 
@@ -12,106 +12,124 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pytest -q
 ./run.sh config/mnist_dpsgd.yaml
-./run.sh config/mnist_fisher_wiener.yaml
+./run.sh --config config/mnist_fisher_wiener.yaml
 ```
 
-也支持 `./run.sh --config config/mnist_dpsgd.yaml`、`python scripts/train.py --config config/mnist_dpsgd.yaml` 和位置参数形式。需先安装本项目；入口不修改 `sys.path`。`run.sh` 使用当前 Python（可设置 `PYTHON`），直接前台运行，无 Conda 环境名和 tmux 依赖。
+也可以直接运行：
 
 ```bash
 python scripts/train.py --config config/mnist_dpsgd_smoke.yaml
 python scripts/train.py --config config/mnist_fisher_wiener_smoke.yaml
 ```
 
-MNIST 自动下载到 `data.root`（默认 `data/`），使用 `ToTensor()` 和 `Normalize((0.1307,), (0.3081,))`。下载失败会保留失败运行目录；离线环境可预先将标准 `MNIST/raw/` 数据放入该目录。路径相对于启动时的工作目录。Smoke 使用真实 MNIST 前 16/32 个 train/test 样本，B=4、epochs=1、K=2、M=8，共 4 次更新；准确率不作为验收门槛。测试还使用固定 tiny tensor dataset 检查训练逻辑。
+MNIST 使用标准 `ToTensor()` 和 `(0.1307,)/(0.3081,)` normalization，默认下载到
+`data/`。离线运行可预先放置标准 `MNIST/raw/` 数据。`runtime.device: auto` 会在
+有 CUDA 时使用 CUDA，否则使用 CPU；`runtime.device: cpu` 不要求 GPU。
 
-正式实验推荐 CUDA；`runtime.device: auto` 在无 CUDA 时使用 CPU。`runtime.gpu: 1` 在导入 PyTorch 前设置 `CUDA_VISIBLE_DEVICES=1`，内部使用 `cuda:0`；显式要求 CUDA 而不可用时失败。运行禁用 TF32、cuDNN benchmark、AMP，启用 deterministic algorithms，并设置线程数和 `CUBLAS_WORKSPACE_CONFIG=:4096:8`。
+## Sampling / Privacy
 
-## 算法数据流
+训练使用真正的 Bernoulli Poisson subsampling。训练集大小为 `N`，配置中的逻辑
+batch size 为 `B`，每个 planned step 对每个样本独立以
 
 ```text
-DP-SGD: per-example gradient → global clipping → Gaussian noise → SGD
-Fisher: per-example gradient → global clipping → Gaussian noise → Fisher-Wiener → SGD
+q = B / N
 ```
 
-私有 batch 使用 `GradSampleModule(loss_reduction="sum")` 和 `cross_entropy(reduction="sum")`。每个样本的全模型 norm 先按源代码逐参数累加 `norm(2).pow(2)`，裁剪因子为 `min(1, C/(norm+1e-6))`。按参数顺序计算：
+的概率 inclusion；`steps_per_epoch = floor(N / B)`，总 mechanism 数为
+`steps_per_epoch * epochs`。RDP accountant 使用同一个 `q`，因此 sampling protocol
+与 accounting protocol 完全一致。采样器使用独立的 `seed+1` generator。
 
-```python
-summed = clipped.sum(dim=0)
-noise = torch.randn_like(summed) * sigma * C
-grad = (summed + noise) / B
+每一步的隐私流水线为：
+
+```text
+Poisson private batch
+→ per-example global clipping
+→ summed-space Gaussian noise
+→ divide by expected batch size B
+→ SGD
 ```
 
-Fisher 在上述 DP noisy gradient 之后处理，不再裁剪或加噪。两条训练路径共享同一 DP 函数；DP-SGD 不生成 synthetic probes、不构造 covariance、不分解特征值、不调用 filter。
+Fisher-Wiener 路径在 Gaussian mechanism 之后增加：
 
-SimpleCNN：Conv2d(1,16,3,padding=1) → ReLU → MaxPool(2) → Conv2d(16,32,3,padding=1) → ReLU → MaxPool(2) → Flatten → Linear(1568,128) → ReLU → Linear(128,10)。无归一化层、Dropout 或额外优化器状态。
-
-## Wiener 数学与 synthetic Fisher
-
-每层 $F\approx G\otimes A$，FP32 `eigh` 后将负特征值 clamp 至 0：
-
-$$r=(\sigma C/B)^2,\qquad \lambda_F=\lambda_G\lambda_A,\qquad H=\frac{\lambda_F}{\lambda_F+r}.$$
-
-分母为 0 的 mode 返回 0；对已加噪梯度矩阵 $M$：
-
-$$\widetilde M=Q_G[H\odot(Q_G^\top M Q_A)]Q_A^\top.$$
-
-按 `qg @ (h * (qg.T @ matrix @ qa)) @ qa.T` 的源运算顺序计算，不使用 inverse Fisher、natural gradient、对角近似或 EMA。固定层 `conv1, conv2, fc1, fc2`，weight 按输出维展平，bias 是最后一列。
-
-在 step 0 及 `step % K == 0` 时、取下一 private batch 之前刷新。使用独立 SimpleCNN 加载当前私有模型参数。probes 为 `(1,28,28)` 的 complex FFT pink noise，逐样本标准化后乘 0.5，标签是随机 `randint(0,10)`。synthetic backward 保留源代码 **mean CE**；Linear 偏置增广，Conv 用 `F.unfold`，每个 batch 分别加 `1e-5` ridge，最终 `torch.stack(...).mean(0)`。formal 默认 10×256 probes，严格要求 M 能被 B 整除。
-
-RNG 分流：init=seed、train loader=seed+1、test loader=seed+2、synthetic=seed+3、DP noise=seed+4。源 `RNGStream` 保存 CPU/CUDA 状态，通过 `fork_rng` 隔离；独立 Fisher 模型初始化也隔离。测试验证真实 refresh 不改变训练参数、梯度、grad_sample、全局 RNG 或下一次 DP noise。
-
-## 隐私会计与研究输出
-
-校准调用 `get_noise_multiplier(target_epsilon, target_delta, sample_rate=B/train_size, steps=total_steps, accountant="rdp")`，每次 private update 后调用 `RDPAccountant.step`。采样保留原固定 shuffle、drop_last=True，**不是 Poisson sampling**。README 与 resolved config 明确记录：
-
-```yaml
-sampling: fixed_shuffle_drop_last
-accounting_convention: inherited_rdp_sample_rate_convention
-poisson_sampling: false
+```text
+→ Fisher-Wiener post-processing
 ```
 
-这里继承源仓库的 sample-rate RDP 会计约定，不将它表述为对固定无放回采样的新增严格隐私证明。Fisher state 只读取当前模型参数和 synthetic probes；当前模型来自此前 DP 更新的后处理，probes 不读取原始 MNIST training examples。数据流是 `DP gradient → data-free Fisher-Wiener post-processing`。
+仍然是 manual clipping、manual Gaussian noise 和 `RDPAccountant`，没有使用 GDP、
+`PrivacyEngine`、Ghost Clipping、Adam 或 KFAC inverse preconditioning。
 
-`train_loss`、`clip_rate` 是未加隐私保护的研究统计；test metrics 假设测试集可公开。报告的 epsilon 描述继承的梯度机制会计，不能作为整个日志发布的隐私保证。
+空 Poisson batch 是合法事件，不会重采样、跳过或合并。此时不做 private
+forward/backward，直接执行零 summed gradient 加 Gaussian noise，再除以 `B`，计入
+一次 accountant，并执行 Wiener（若启用）和 SGD。
 
-## 配置与输出
+## Metrics 与隐私计数
 
-一个 YAML 是一次实验，`training.learning_rate` 直接控制优化器。正式默认 seed=42，epochs=5，B=256，lr=0.1，epsilon=1，delta=1e-5，C=1，K=50，M=2560，eval_interval=100。`config/sweeps/` 的六份配置仅 LR 不同（0.10/0.15/0.20/0.30/0.50/0.80）；trainer 不包含 sweep。未知字段、错误类型、非法范围和不支持的算法设置直接失败。
+`privacy_steps` 表示已经执行 Gaussian mechanism 的次数；`completed_steps` 表示
+成功完成 `optimizer.step()` 的次数。accountant 在 Gaussian noise 返回后、Fisher
+和 optimizer 之前立即计数，所以 Fisher 发散也不会丢失已经发生的 privacy cost。
 
-每次运行创建 `outputs/<timestamp>_simplecnn_mnist_<algorithm>_eps..._lr...[_K..._M...]/`：
+`metrics.csv` 每完成一个 epoch 写一行，并立即 `flush` 和 `fsync`。其中
+`train_loss` 按实际 sampled examples 加权，`clip_rate` 为累计 clipped examples
+除以累计 sampled examples；空 epoch 对这两个字段写空值。每个 epoch 结束后只评估
+一次，不再支持 step-based `eval_interval`。
 
-- `config.yaml`：原始 YAML。
-- `resolved_config.yaml`：默认值和实际 device/GPU、数据规模、steps、sigma、q、采样约定、RNG seeds、Wiener 开关。
-- `metrics.csv`：每步 train loss、epsilon、clipping/noisy/filter norm、刷新标志、时间与 state bytes；评估步附 test loss/accuracy，最后一步总会评估。step 从 0 开始。
-- `summary.json`：completed/diverged/failed、完成步数、最终/最佳评估、会计、耗时、模型 hash；Fisher 另有 refresh/filter 时间统计。
-- `train.log`：逐步记录与异常堆栈。
+## RNG 与 Fisher 数学
 
-默认不存 checkpoint。指标逐步 flush，非 finite 值使运行停止；已有指标保留，summary 记录 diverged_step。普通异常也写 failed summary，CLI 返回非零。
+RNG 分流为 `init=seed`、`train sampler=seed+1`、`test=seed+2`、
+`synthetic=seed+3`、`DP noise=seed+4`。Poisson sampler 只消耗自己的 generator；
+synthetic probes 和 DP noise 通过独立 `RNGStream` 隔离。
 
-## 来源与轨迹验证
+Fisher 使用 synthetic pink-noise probes 和独立模型构造 covariance，不读取真实
+private batch。保留源实现的 FP32 eigendecomposition、`r=(sigma*C/B)^2` 和
 
-审计的 [dp-adam-eval](https://github.com/3171849052/dp-adam-eval) main 提交为 `36307b3d93f1a3a4db2e02189f5ba0efa0302605`，与本地一致：
-
-- [expv1b/train_expv1b.py](https://github.com/3171849052/dp-adam-eval/blob/36307b3d93f1a3a4db2e02189f5ba0efa0302605/expv1b/train_expv1b.py)：更新和刷新顺序、加载器、会计。
-- `expv1b/common.py`：formal/smoke 协议；`expv1/common.py`：RNGStream、初始化。
-- [expv1/fisher_wiener.py](https://github.com/3171849052/dp-adam-eval/blob/36307b3d93f1a3a4db2e02189f5ba0efa0302605/expv1/fisher_wiener.py)：synthetic samples、covariance、FP32 state、pack/unpack、矩阵变换。
-- [DP-KFC](https://github.com/molinamarcvdb/DP-KFC) 固定提交 `eb31b9aeb2280642684f4cedfa65cc02b76c76cd` 的 `src/dp_kfac/{models,privacy,recorder,covariance,data,optimizer,trainer}.py`：仅迁移所需 SimpleCNN、clipping/noise、KFAC、MNIST transform、pink noise、set_seed。
-- [dp-adambc-ex](https://github.com/3171849052/dp-adambc-ex)：仅参考 config/src/scripts/tests、独立 run logging 的工程结构，未迁移其训练算法。
-
-`tests/fixtures/expv1b_cpu_trajectory.json` 由**原 ExpV1b private_update 实际执行**生成。固定初始化、12 个 tiny 样本、batch order、sigma=2、seed=42、B=4、M=8、K=2，运行 3 步。逐参数 SHA256 检查初始化、每步 DP noisy gradient、filtered gradient、SGD 后参数、最终模型，以及 synthetic audit/noise RNG；Fisher 使用真实 covariance 和 eigendecomposition。参考生成脚本 `scripts/generate_reference.py` 是仅开发时运行的源仓库工具，需要显式 `PYTHONPATH=/path/to/dp-adam-eval`；普通训练和 pytest 只读取提交的 JSON，不需要任何上游 checkout。
-
-回归锚点是在 CPU、4 threads、PyTorch 2.13.0+cu126、torchvision 0.28.0+cu126、Opacus 1.6.0 上生成。跨 PyTorch/BLAS/CUDA 版本或设备不承诺 bitwise 一致；测试不会跳过或自动重建不匹配锚点。若需比较另一数值环境，应在同一环境重新运行审计的原实现。此 tiny regression 不能替代五 epoch formal trajectory 的完整复现；本次不运行 formal 长实验。
-
-工程差异：移除源 formal 固定参数锁以允许 YAML 实验（保留默认值和算法约束）；移除 LR 内部 sweep、诊断谱和旧输出布局；eval batch size 单独配置；增加 finite/shape 校验。源算术、synthetic mean CE 和随机数消费顺序保持不变。
-
-## 导出独立小工程
-
-```bash
-python scripts/export_standalone.py /tmp/dp-wiener-mnist
-cd /tmp/dp-wiener-mnist
-pip install -r requirements.txt
-pytest -q
+```text
+H = lambda_F / (lambda_F + r)
 ```
 
-导出只复制必需工程文件与固定参考，不复制 `exp*`、上游 checkout、数据缓存或历史运行；首次运行需下载 MNIST。验证记录见 `docs/verification.md`。
+以及 `Q_G [H * (Q_G.T M Q_A)] Q_A.T` 的运算顺序。固定 batch、fixed RNG 下的
+底层 DP/Wiener trajectory regression 仍应 bitwise 通过；完整 DataLoader trajectory
+不再与旧 fixed-shuffle protocol 要求一致。
+
+## Output naming 与文件
+
+运行目录按参考工程风格使用秒级 timestamp，并把所有有效实验 scalar 编码进去，
+例如：
+
+```text
+20260909-123456_simple_cnn_mnist_dp_fisher_wiener_s42_ep5_b256_eb256_lr0.1_optsgd_mom0_wd0_eps1_d1e-5_C1_accrdp_samppois_acctpoisson_rdp_pois1_beta1_K50_M2560_ridge1e-5_synpink_noise_trall_teall_nw0_devauto_gpu0_th4_det1
+```
+
+碰撞时按秒递增 timestamp。`data.root` 和 `output.root` 不进入目录名；用户指定的
+device/GPU 值进入目录名，实际解析设备和 GPU 信息写入 `resolved_config.yaml`。
+
+每个 run 至少包含：
+
+```text
+config.yaml
+resolved_config.yaml
+metrics.csv
+summary.json
+train.log
+```
+
+## Launch / tmux
+
+`run.sh` 先读取配置，执行 `--print-gpu` 和适用的 `--validate-gpu`，调用
+`--prepare-run` 创建目录和 metadata，再生成基于 run directory 的安全 tmux session
+名。存在 tmux 时后台启动，并打印：
+
+```text
+attach: tmux attach -t <session>
+tail: tail -f <run-log>
+kill: tmux kill-session -t <session>
+```
+
+没有 tmux 时会提示 `tmux is unavailable; running training in the foreground`，
+然后使用同一个已准备的目录前台运行。Python 可通过 `PYTHON=/path/to/python`
+覆盖，未硬编码 Conda 环境或机器路径。
+
+## 历史实现与回归
+
+`expv1/`、`expv1b/`、`expv1c/` 等历史实验不参与 standalone 训练。固定输入 batch
+的 ExpV1b CPU trajectory fixture 保留在 `tests/fixtures/`，用于验证 per-example
+gradient → clipping → noise → Fisher-Wiener → SGD 的底层数学和 RNG 顺序。

@@ -13,46 +13,75 @@ def clip_and_noise_gradients(
     model: nn.Module,
     noise_multiplier: float,
     max_grad_norm: float,
-    batch_size: int,
+    sample_count: int,
+    expected_batch_size: int | None = None,
     store_summed_grad: bool = False,
 ) -> None:
-    """Clip each full-model sample, sum, add randn*sigma*C, then divide by B."""
+    """Apply global clipping and the summed-space Gaussian mechanism.
+
+    ``sample_count`` is the actual size of the current Poisson batch.  The
+    normalization denominator is always ``expected_batch_size`` (the logical
+    configured batch size), including when the batch is empty.
+    """
+    if expected_batch_size is None:
+        # This preserves the fixed-batch helper's old calling convention while
+        # making the two concepts explicit for Poisson callers.
+        expected_batch_size = sample_count
     if (
-        type(batch_size) is not int
-        or batch_size <= 0
+        type(sample_count) is not int
+        or sample_count < 0
+        or type(expected_batch_size) is not int
+        or expected_batch_size <= 0
         or not math.isfinite(noise_multiplier)
         or noise_multiplier < 0
         or not math.isfinite(max_grad_norm)
         or max_grad_norm <= 0
     ):
         raise ValueError("Invalid DP parameters")
-    params = _get_params_with_grad_sample(model)
-    if not params or len(params) != sum(p.requires_grad for p in model.parameters()):
+
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    if not trainable:
+        raise ValueError("Model has no trainable parameters")
+
+    if sample_count == 0:
+        # An empty Poisson draw is still one Gaussian mechanism.  There is no
+        # private backward pass in this case, so construct its zero summed
+        # gradient directly and consume exactly one noise tensor per parameter.
+        for p in trainable:
+            summed = torch.zeros_like(p).contiguous().view(-1)
+            if store_summed_grad:
+                p.summed_grad = (summed / expected_batch_size).view_as(p)
+            noise = torch.randn_like(summed) * noise_multiplier * max_grad_norm
+            p.grad = ((summed + noise) / expected_batch_size).view_as(p)
+        return
+
+    params = trainable
+    if any(not hasattr(p, "grad_sample") or p.grad_sample is None for p in params):
         raise ValueError("Missing per-example gradients")
     for p in params:
         sample = _get_grad_sample(p)
-        if sample.shape != (batch_size, *p.shape):
+        if sample.shape != (sample_count, *p.shape):
             raise ValueError("Invalid per-example gradient shape")
         require_finite(sample)
 
     device = params[0].device
-    total_norm_sq = _compute_per_sample_norms_squared(params, batch_size, device)
+    total_norm_sq = _compute_per_sample_norms_squared(params, sample_count, device)
     require_finite(total_norm_sq)
     clip_factors = _compute_clip_factors(total_norm_sq, max_grad_norm)
 
     for p in params:
         grad_sample = _get_grad_sample(p)
-        grad_sample = grad_sample.contiguous().view(batch_size, -1)
+        grad_sample = grad_sample.contiguous().view(sample_count, -1)
 
         clipped = grad_sample * clip_factors.unsqueeze(1)
         summed = clipped.sum(dim=0)
 
         if store_summed_grad:
-            p.summed_grad = (summed / batch_size).view_as(p)
+            p.summed_grad = (summed / expected_batch_size).view_as(p)
 
         noise = torch.randn_like(summed) * noise_multiplier * max_grad_norm
 
-        p.grad = ((summed + noise) / batch_size).view_as(p)
+        p.grad = ((summed + noise) / expected_batch_size).view_as(p)
         p.grad_sample = None
 
 
