@@ -1,0 +1,29 @@
+{
+  "experiment": "expv5",
+  "seeds": [
+    123,
+    456
+  ],
+  "beta_initial": 1.0,
+  "beta_update_rule": "one_interval_lag_hold_last_positive",
+  "beta_window": 50,
+  "epochs": 5,
+  "batch_size": 256,
+  "epsilon": 1.0,
+  "delta": 1e-05,
+  "max_grad_norm": 1.0,
+  "optimizer": "Adam",
+  "K": 50,
+  "M_syn": 2560,
+  "eval_interval": 100,
+  "device": "auto",
+  "threads": 4,
+  "train_subset": null,
+  "test_subset": null,
+  "smoke": false,
+  "learning_rate": 0.001,
+  "adam_beta1": 0.9,
+  "adam_beta2": 0.999,
+  "adam_eps": 1e-08,
+  "weight_decay": 0
+}

@@ -1,0 +1,89 @@
+ExpV5 paired Adam comparison.
+ seed                              run_id    status  accuracy_auc  final_accuracy  late_mean_accuracy  final_test_loss  T50  T70   T80   T85   T90
+  123                             dp_adam completed      0.895138          0.9201            0.911871         0.460727  100  100 200.0 200.0 600.0
+  123         dp_fisher_wiener_beta1_adam completed      0.869140          0.8838            0.881343         0.886734  100  100 200.0 300.0   NaN
+  123 dp_fisher_wiener_adaptive_beta_adam completed      0.764890          0.7694            0.769129         1.189057  100  100   NaN   NaN   NaN
+  456                             dp_adam completed      0.898337          0.9246            0.916986         0.416352  100  100 200.0 200.0 500.0
+  456         dp_fisher_wiener_beta1_adam completed      0.858779          0.8888            0.878957         0.825916  100  100 200.0 400.0   NaN
+  456 dp_fisher_wiener_adaptive_beta_adam completed      0.689708          0.7388            0.709400         1.080607  100  700   NaN   NaN   NaN
+{
+  "B_minus_A": {
+    "accuracy_auc": {
+      "mean": -0.032778271028037376,
+      "pairs": 2
+    },
+    "final_accuracy": {
+      "mean": -0.03604999999999997,
+      "pairs": 2
+    },
+    "late_mean_accuracy": {
+      "mean": -0.034278571428571325,
+      "pairs": 2
+    },
+    "final_test_loss": {
+      "mean": 0.4177860806584358,
+      "pairs": 2
+    },
+    "T50": {
+      "mean": 0.0,
+      "pairs": 2
+    },
+    "T70": {
+      "mean": 0.0,
+      "pairs": 2
+    },
+    "T80": {
+      "mean": 0.0,
+      "pairs": 2
+    },
+    "T85": {
+      "mean": 150.0,
+      "pairs": 2
+    },
+    "T90": {
+      "mean": null,
+      "pairs": 0
+    }
+  },
+  "C_minus_B": {
+    "accuracy_auc": {
+      "mean": -0.1366602803738317,
+      "pairs": 2
+    },
+    "final_accuracy": {
+      "mean": -0.13220000000000004,
+      "pairs": 2
+    },
+    "late_mean_accuracy": {
+      "mean": -0.14088571428571428,
+      "pairs": 2
+    },
+    "final_test_loss": {
+      "mean": 0.27850711770057673,
+      "pairs": 2
+    },
+    "T50": {
+      "mean": 0.0,
+      "pairs": 2
+    },
+    "T70": {
+      "mean": 300.0,
+      "pairs": 2
+    },
+    "T80": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T85": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T90": {
+      "mean": null,
+      "pairs": 0
+    }
+  }
+}
+Missing thresholds mean not reached; their paired differences stay missing.
+Compare filter_gradient_norm_ratio with actual parameter_update_norm in mechanism_by_seed_layer.csv.
+Mean parameter update norm B/A by seed and layer: adam_scale_B_vs_A.csv.

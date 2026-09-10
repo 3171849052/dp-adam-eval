@@ -1,0 +1,36 @@
+{
+  "passed": true,
+  "pairing_passed": true,
+  "runs": [
+    {
+      "seed": 123,
+      "run_id": "dp_adam",
+      "status": "completed"
+    },
+    {
+      "seed": 123,
+      "run_id": "dp_fisher_wiener_beta1_adam",
+      "status": "completed"
+    },
+    {
+      "seed": 123,
+      "run_id": "dp_fisher_wiener_adaptive_beta_adam",
+      "status": "completed"
+    },
+    {
+      "seed": 456,
+      "run_id": "dp_adam",
+      "status": "completed"
+    },
+    {
+      "seed": 456,
+      "run_id": "dp_fisher_wiener_beta1_adam",
+      "status": "completed"
+    },
+    {
+      "seed": 456,
+      "run_id": "dp_fisher_wiener_adaptive_beta_adam",
+      "status": "completed"
+    }
+  ]
+}

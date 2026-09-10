@@ -1,0 +1,81 @@
+{
+  "smoke_functional_only": false,
+  "effects": {
+    "B_minus_A": {
+      "accuracy_auc": {
+        "mean": -0.032778271028037376,
+        "pairs": 2
+      },
+      "final_accuracy": {
+        "mean": -0.03604999999999997,
+        "pairs": 2
+      },
+      "late_mean_accuracy": {
+        "mean": -0.034278571428571325,
+        "pairs": 2
+      },
+      "final_test_loss": {
+        "mean": 0.4177860806584358,
+        "pairs": 2
+      },
+      "T50": {
+        "mean": 0.0,
+        "pairs": 2
+      },
+      "T70": {
+        "mean": 0.0,
+        "pairs": 2
+      },
+      "T80": {
+        "mean": 0.0,
+        "pairs": 2
+      },
+      "T85": {
+        "mean": 150.0,
+        "pairs": 2
+      },
+      "T90": {
+        "mean": null,
+        "pairs": 0
+      }
+    },
+    "C_minus_B": {
+      "accuracy_auc": {
+        "mean": -0.1366602803738317,
+        "pairs": 2
+      },
+      "final_accuracy": {
+        "mean": -0.13220000000000004,
+        "pairs": 2
+      },
+      "late_mean_accuracy": {
+        "mean": -0.14088571428571428,
+        "pairs": 2
+      },
+      "final_test_loss": {
+        "mean": 0.27850711770057673,
+        "pairs": 2
+      },
+      "T50": {
+        "mean": 0.0,
+        "pairs": 2
+      },
+      "T70": {
+        "mean": 300.0,
+        "pairs": 2
+      },
+      "T80": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T85": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T90": {
+        "mean": null,
+        "pairs": 0
+      }
+    }
+  }
+}
