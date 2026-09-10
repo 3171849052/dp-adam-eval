@@ -1,0 +1,15 @@
+{
+  "smoke_functional_only": false,
+  "best_mean_auc": {
+    "beta1": {
+      "alpha": 0.0,
+      "mean_accuracy_auc": 0.8967376168224299
+    },
+    "adaptive_beta": {
+      "alpha": 0.0,
+      "mean_accuracy_auc": 0.8967376168224299
+    }
+  }
+}
+ExpV5 alpha=1 clean_gradient_distortion was not recorded; left missing.
+Threshold differences remain missing when not reached.
