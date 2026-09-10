@@ -107,3 +107,23 @@ def test_sweep_reference_mapping(tmp_path):
     assert result['best_mean_auc']['beta1']['alpha'] == 1.
     paired = pd.read_csv(tmp_path/'out/paired_adaptive_minus_beta1_by_alpha.csv')
     assert (paired[paired.alpha > 0].accuracy_auc == 1).all()
+
+
+@pytest.mark.parametrize('beta', [1., 3.])
+def test_certificate_beta_and_alpha(beta):
+    from expv3.adaptive_fisher_wiener import h_hash, h_stats
+    from expv6.validate_expv6 import validate_certificates
+    import pandas as pd
+    lambda_a, lambda_g = torch.arange(1., 5.), torch.arange(1., 4.)
+    lf = lambda_g[:, None] * lambda_a[None, :]
+    base = {'layer': dict(lambda_A=lambda_a, lambda_G=lambda_g, H=lf/(lf+4.))}
+    active_beta = rebuild_H_with_beta(base, {'layer': beta}, 4.)
+    active = v6.interpolate_state(active_beta, .5)
+    certificate = dict(layer='layer', interval_index=0, refresh_step=0, alpha=.5,
+                       beta_train=beta, r=4., lambda_A=lambda_a.tolist(), lambda_G=lambda_g.tolist(),
+                       H_beta_hash=h_hash(active_beta['layer']['H']),
+                       H_alpha_hash=h_hash(active['layer']['H']))
+    assert certificate['H_beta_hash'] != certificate['H_alpha_hash']
+    layers = pd.DataFrame([dict(layer='layer', step=0, beta_train=beta,
+                                **h_stats(active['layer']['H']))])
+    validate_certificates([certificate], layers, {'K': 2}, .5, 'cpu')

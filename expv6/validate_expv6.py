@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import torch
+from expv3.adaptive_fisher_wiener import h_hash, h_stats
 from expv3.common import expected_total_steps, save_json
 from expv5.train_expv5 import ADAM_CONFIG
 from expv6.train_expv6 import check_config
@@ -12,6 +14,24 @@ from expv6.summarize_expv6 import sweep_roots
 
 def load(path):
     return json.loads(Path(path).read_text())
+
+
+def validate_certificates(certificates, layers, config, alpha, device):
+    for certificate in certificates:
+        assert certificate['alpha'] == alpha
+        lambda_a = torch.tensor(certificate['lambda_A'], dtype=torch.float32, device=device)
+        lambda_g = torch.tensor(certificate['lambda_G'], dtype=torch.float32, device=device)
+        scaled = certificate['beta_train'] * (lambda_g[:, None] * lambda_a[None, :])
+        h_beta = scaled / (scaled + certificate['r'])
+        h_alpha = (1-alpha) + alpha*h_beta
+        assert h_hash(h_beta) == certificate['H_beta_hash']
+        assert h_hash(h_alpha) == certificate['H_alpha_hash']
+        observed = layers[(layers.layer == certificate['layer']) &
+                          (layers.step // config['K'] == certificate['interval_index'])]
+        assert len(observed) > 0
+        np.testing.assert_allclose(observed.beta_train, certificate['beta_train'])
+        for field, expected in h_stats(h_alpha).items():
+            np.testing.assert_allclose(observed[field], expected, rtol=1e-6, atol=1e-8)
 
 
 def validate(config, runs, expv5_runs, output):
@@ -47,6 +67,8 @@ def validate(config, runs, expv5_runs, output):
         adaptive = labels['family'] == 'adaptive_beta' and labels['alpha'] != 0
         assert meta['beta_algorithm_active'] == adaptive
         if 0 < labels['alpha'] < 1:
+            validate_certificates(load(root / 'h_certificates.json'), layers, config,
+                                  labels['alpha'], meta['device'])
             np.testing.assert_allclose(layers.alpha, labels['alpha'])
             assert np.isfinite(layers.clean_gradient_distortion).all()
             assert (layers.H_min >= 1-labels['alpha']-1e-6).all()

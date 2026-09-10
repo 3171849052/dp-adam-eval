@@ -33,7 +33,11 @@ conda run -n curve python -m expv6.summarize_expv6 \
   --expv5-runs expv5/runs/smoke --output expv6/runs/smoke
 ```
 
-validator 仅检查核心协议、完成状态、实际 Adam 输入范数、beta lag 和已有 batch/RNG/evaluation pairing；不增加 hash 或 certificate 校验。
+validator 检查核心协议、完成状态、实际 Adam 输入范数、beta lag 和已有 batch/RNG/evaluation pairing。
+ExpV6 certificate 显式记录 `alpha`、插值前的 `H_beta_hash` 和实际 active H 的 `H_alpha_hash`，
+以及 `beta_train`、`r`、`lambda_A`、`lambda_G`；移除含义不明确的 `H_hash`，保留原有 `H_beta1_hash`。
+验证时按训练设备上的 FP32 运算重算两个 H 并核对 hash，以及 layer_metrics 的 H 统计。
+beta_controller_metrics 仍表示插值前的 H_beta。
 已有训练循环的 artifact 写入保持原样。
 
 ## 汇总

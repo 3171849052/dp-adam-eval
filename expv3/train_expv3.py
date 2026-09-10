@@ -910,7 +910,13 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                     } for row in current_rows])
                     synthetic_audits.append({"step": step, **synthetic_audit})
                     if hasattr(experiment, "interpolate_state"):
+                        beta_hashes = {name: h_hash(state["H"]) for name, state in active.items()}
                         active = experiment.interpolate_state(active, spec["alpha"])
+                        for certificate in h_certificates[-len(current_rows):]:
+                            name = certificate["layer"]
+                            certificate.pop("H_hash")
+                            certificate.update(alpha=spec["alpha"], H_beta_hash=beta_hashes[name],
+                                               H_alpha_hash=h_hash(active[name]["H"]))
                     del samples, covariances
 
                 x, y, indices = next(iterator)
