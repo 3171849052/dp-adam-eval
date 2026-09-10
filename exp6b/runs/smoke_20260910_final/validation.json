@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "pairing_passed": true,
+  "floor_passed": true,
+  "runs": 3,
+  "seeds": [
+    42
+  ],
+  "methods": [
+    "syn_adam_floor",
+    "syn_adam_ema_floor",
+    "dp_adam"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "runs": 3,
+  "seeds": [
+    42
+  ],
+  "methods": [
+    "syn_adam_floor",
+    "syn_adam_ema_floor",
+    "dp_adam"
+  ],
+  "contrasts": [
+    "syn_adam_floor - dp_adam",
+    "syn_adam_ema_floor - syn_adam_floor",
+    "syn_adam_ema_floor - dp_adam"
+  ],
+  "fingerprint": "453f057baf4f5e8861cfa9934d6c9b4b76ba69875e79776319e4614225a71526"
+}
