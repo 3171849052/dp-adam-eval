@@ -1,0 +1,43 @@
+{
+  "seed": 91,
+  "method": "syn_adam_ema",
+  "fingerprint": "2a0416b6206a225e74c38042384063901d67317a121b12436e8e3ca1c401b463",
+  "device": "cuda",
+  "total_steps": 1170,
+  "noise_multiplier": 1.068115234375,
+  "sample_rate": 0.004266666666666667,
+  "initial_model_hash": "eb98ba40d4aad3870a81d0fd4308d15545cf059ce8d507e9ac06ee421f0181f9",
+  "parameter_order": [
+    "conv1.weight",
+    "conv1.bias",
+    "conv2.weight",
+    "conv2.bias",
+    "fc1.weight",
+    "fc1.bias",
+    "fc2.weight",
+    "fc2.bias"
+  ],
+  "rng_seeds": {
+    "init": 91,
+    "loader": 92,
+    "synthetic": 94,
+    "noise": 95
+  },
+  "dp_pipeline": "per-sample global clip -> aggregate -> Gaussian noise -> privatized gradient",
+  "synthetic_is_post_dp_state": true,
+  "preclip_synthetic_modification": false,
+  "optimizer": "explicit_first_moment_plus_synthetic_second_moment",
+  "complete": true,
+  "status": "completed",
+  "completed_steps": 1170,
+  "planned_steps": 1170,
+  "final_accuracy": 0.0966,
+  "best_accuracy": 0.0966,
+  "late_mean_accuracy": 0.0966,
+  "final_test_loss": 140853693330.2272,
+  "epsilon_spent": 0.995693195331761,
+  "total_time": 130.90387601405382,
+  "final_update_norm": 2653.7157512070735,
+  "final_first_moment_norm": 0.714188268703275,
+  "final_model_hash": "d1e1231e5cf144d382e9de2d0c21e56ba92faecd7c48f9e6a686db1122bbb148"
+}

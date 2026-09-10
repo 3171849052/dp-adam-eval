@@ -1,0 +1,18 @@
+{
+  "status": "completed",
+  "seed": 91,
+  "method": "dp_adam",
+  "completed_steps": 1170,
+  "planned_steps": 1170,
+  "final_accuracy": 0.9136,
+  "best_accuracy": 0.9136,
+  "late_mean_accuracy": 0.9067571428571428,
+  "final_test_loss": 0.4740141929805279,
+  "epsilon_spent": 0.995693195331761,
+  "noise_multiplier": 1.068115234375,
+  "total_time": 114.67640611436218,
+  "final_update_norm": 0.10416234241898507,
+  "final_first_moment_norm": 0.4349908520896182,
+  "final_model_hash": "7bcb805a0fe3c3002a5478e55db4abf1e072dafcd82dfabf13edffca27b39584",
+  "fingerprint": "2a0416b6206a225e74c38042384063901d67317a121b12436e8e3ca1c401b463"
+}
