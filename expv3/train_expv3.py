@@ -909,6 +909,8 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                         if beta1_state is not None else None,
                     } for row in current_rows])
                     synthetic_audits.append({"step": step, **synthetic_audit})
+                    if hasattr(experiment, "interpolate_state"):
+                        active = experiment.interpolate_state(active, spec["alpha"])
                     del samples, covariances
 
                 x, y, indices = next(iterator)
