@@ -758,7 +758,8 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                                  sample_rate=q, steps=total, accountant="rdp")
     set_seed(seed)
     model = GradSampleModule(SimpleCNN().to(device), loss_reduction="sum")
-    optimizer = make_optimizer(model, spec["learning_rate"], config)
+    optimizer_factory = getattr(experiment, "make_optimizer", make_optimizer)
+    optimizer = optimizer_factory(model, spec["learning_rate"], config)
     accountant = RDPAccountant()
     synthetic_rng, noise_rng = RNGStream(seed + 3, device), RNGStream(seed + 4, device)
     metadata = {
@@ -768,7 +769,9 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
         "model": "SimpleCNN", "noise_multiplier": sigma, "sample_rate": q,
         "total_steps": total, "target_epsilon": config["epsilon"],
         "target_delta": config["delta"], "accountant": "rdp",
-        "max_grad_norm": config["max_grad_norm"], "optimizer": "SGD", "momentum": 0,
+        "max_grad_norm": config["max_grad_norm"], "optimizer": config["optimizer"],
+        **({"momentum": 0} if config["optimizer"] == "SGD" else {
+            key: config[key] for key in ("adam_beta1", "adam_beta2", "adam_eps", "weight_decay")}),
         "initial_model_hash": digest(model.parameters()), "covariance_ridge": 1e-5,
         "eigen_budget": 0, "rng_seeds": {"init": seed, "loader": seed + 1,
         "test": seed + 2, "synthetic": seed + 3, "noise": seed + 4},
@@ -951,6 +954,8 @@ def train(config, seed, run_name, output, data_override=None, *, diagnostics=Tru
                             ),
                         })
                     break
+                if hasattr(experiment, "decorate_metrics"):
+                    experiment.decorate_metrics(current_rows, current_layers, optimizer, active, active_beta)
                 diagnostic_seconds += elapsed
                 controller_seconds_total += controller_elapsed + refresh_controller_time
                 current_rows.update(

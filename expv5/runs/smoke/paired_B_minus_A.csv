@@ -1,0 +1,2 @@
+seed,accuracy_auc,final_accuracy,late_mean_accuracy,final_test_loss,T50,T70,T80,T85,T90
+123,0.0,0.0,0.0,0.08555302023887634,,,,,

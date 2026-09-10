@@ -1,0 +1,85 @@
+Functional smoke only; no scientific conclusion.
+ seed                              run_id    status  accuracy_auc  final_accuracy  late_mean_accuracy  final_test_loss  T50  T70  T80  T85  T90
+  123                             dp_adam completed       0.09375         0.09375             0.09375         2.304112  NaN  NaN  NaN  NaN  NaN
+  123         dp_fisher_wiener_beta1_adam completed       0.09375         0.09375             0.09375         2.389665  NaN  NaN  NaN  NaN  NaN
+  123 dp_fisher_wiener_adaptive_beta_adam completed       0.09375         0.09375             0.09375         2.346566  NaN  NaN  NaN  NaN  NaN
+{
+  "B_minus_A": {
+    "accuracy_auc": {
+      "mean": 0.0,
+      "pairs": 1
+    },
+    "final_accuracy": {
+      "mean": 0.0,
+      "pairs": 1
+    },
+    "late_mean_accuracy": {
+      "mean": 0.0,
+      "pairs": 1
+    },
+    "final_test_loss": {
+      "mean": 0.08555302023887634,
+      "pairs": 1
+    },
+    "T50": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T70": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T80": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T85": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T90": {
+      "mean": null,
+      "pairs": 0
+    }
+  },
+  "C_minus_B": {
+    "accuracy_auc": {
+      "mean": 0.0,
+      "pairs": 1
+    },
+    "final_accuracy": {
+      "mean": 0.0,
+      "pairs": 1
+    },
+    "late_mean_accuracy": {
+      "mean": 0.0,
+      "pairs": 1
+    },
+    "final_test_loss": {
+      "mean": -0.04309907555580139,
+      "pairs": 1
+    },
+    "T50": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T70": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T80": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T85": {
+      "mean": null,
+      "pairs": 0
+    },
+    "T90": {
+      "mean": null,
+      "pairs": 0
+    }
+  }
+}
+Missing thresholds mean not reached; their paired differences stay missing.
+Compare filter_gradient_norm_ratio with actual parameter_update_norm in mechanism_by_seed_layer.csv.

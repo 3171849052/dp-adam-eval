@@ -1,0 +1,81 @@
+{
+  "smoke_functional_only": true,
+  "effects": {
+    "B_minus_A": {
+      "accuracy_auc": {
+        "mean": 0.0,
+        "pairs": 1
+      },
+      "final_accuracy": {
+        "mean": 0.0,
+        "pairs": 1
+      },
+      "late_mean_accuracy": {
+        "mean": 0.0,
+        "pairs": 1
+      },
+      "final_test_loss": {
+        "mean": 0.08555302023887634,
+        "pairs": 1
+      },
+      "T50": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T70": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T80": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T85": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T90": {
+        "mean": null,
+        "pairs": 0
+      }
+    },
+    "C_minus_B": {
+      "accuracy_auc": {
+        "mean": 0.0,
+        "pairs": 1
+      },
+      "final_accuracy": {
+        "mean": 0.0,
+        "pairs": 1
+      },
+      "late_mean_accuracy": {
+        "mean": 0.0,
+        "pairs": 1
+      },
+      "final_test_loss": {
+        "mean": -0.04309907555580139,
+        "pairs": 1
+      },
+      "T50": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T70": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T80": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T85": {
+        "mean": null,
+        "pairs": 0
+      },
+      "T90": {
+        "mean": null,
+        "pairs": 0
+      }
+    }
+  }
+}

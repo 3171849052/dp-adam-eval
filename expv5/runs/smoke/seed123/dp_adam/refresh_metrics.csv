@@ -1,0 +1,3 @@
+seed,run_id,method,learning_rate,config_fingerprint,step,refresh_index,refresh_time,diagnostic_spectrum_time,beta_controller_time,active_state_bytes,measurement_only
+123,dp_adam,dp_sgd,0.001,8da6e9aed8559091fcc9a1cdd9b8f76c0d01922f5b057dd49a4cbba39d38743e,0,0,0.3534381650388241,0.0,0.0,0,True
+123,dp_adam,dp_sgd,0.001,8da6e9aed8559091fcc9a1cdd9b8f76c0d01922f5b057dd49a4cbba39d38743e,2,1,0.0096141267567873,0.0,0.0,0,True

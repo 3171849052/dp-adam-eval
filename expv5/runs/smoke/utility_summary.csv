@@ -1,0 +1,6 @@
+,accuracy_auc,accuracy_auc,final_accuracy,final_accuracy,late_mean_accuracy,late_mean_accuracy,final_test_loss,final_test_loss,T50,T50,T70,T70,T80,T80,T85,T85,T90,T90
+,mean,count,mean,count,mean,count,mean,count,mean,count,mean,count,mean,count,mean,count,mean,count
+run_id,,,,,,,,,,,,,,,,,,
+dp_adam,0.09375,1,0.09375,1,0.09375,1,2.304112046957016,1,,0,,0,,0,,0,,0
+dp_fisher_wiener_adaptive_beta_adam,0.09375,1,0.09375,1,0.09375,1,2.346565991640091,1,,0,,0,,0,,0,,0
+dp_fisher_wiener_beta1_adam,0.09375,1,0.09375,1,0.09375,1,2.3896650671958923,1,,0,,0,,0,,0,,0
