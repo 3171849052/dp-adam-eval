@@ -23,8 +23,7 @@ def summarize(config, runs, output):
             root = Path(runs) / f"seed{seed}" / arm
             summary = json.loads((root / "summary.json").read_text())
             utility.append({k: summary[k] for k in ["seed", "run_id", "status", *UTILITY]})
-            if arm != ARMS[0]:
-                mechanism.append(pd.read_csv(root / "layer_metrics.csv"))
+            mechanism.append(pd.read_csv(root / "layer_metrics.csv"))
     utility = pd.DataFrame(utility)
     utility[UTILITY] = utility[UTILITY].apply(pd.to_numeric)
     utility.to_csv(output / "utility_by_seed.csv", index=False)
@@ -40,7 +39,11 @@ def summarize(config, runs, output):
         effects[name] = {k: dict(mean=float(paired[k].mean()) if paired[k].notna().any() else None,
                                pairs=int(paired[k].count())) for k in UTILITY}
     mechanisms = pd.concat(mechanism, ignore_index=True)
-    mechanisms.groupby(["seed", "run_id", "layer"])[MECHANISM].mean().to_csv(output / "mechanism_by_seed_layer.csv")
+    by_seed_layer = mechanisms.groupby(["seed", "run_id", "layer"])[MECHANISM].mean()
+    by_seed_layer.to_csv(output / "mechanism_by_seed_layer.csv")
+    updates = by_seed_layer["parameter_update_norm"].unstack("run_id")
+    (updates[ARMS[1]] / updates[ARMS[0]]).rename("parameter_update_ratio").to_csv(
+        output / "adam_scale_B_vs_A.csv")
     mechanisms.groupby(["run_id", "layer"])[MECHANISM].agg(["mean", "median", "min", "max"]).to_csv(output / "mechanism_summary.csv")
     result = dict(smoke_functional_only=config["smoke"], effects=effects)
     save_json(output / "summary.json", result)
@@ -48,6 +51,7 @@ def summarize(config, runs, output):
     report += "\n" + utility.to_string(index=False) + "\n" + json.dumps(effects, indent=2)
     report += "\nMissing thresholds mean not reached; their paired differences stay missing.\n"
     report += "Compare filter_gradient_norm_ratio with actual parameter_update_norm in mechanism_by_seed_layer.csv.\n"
+    report += "Mean parameter update norm B/A by seed and layer: adam_scale_B_vs_A.csv.\n"
     (output / "summary.txt").write_text(report)
     print(report)
     return result

@@ -83,3 +83,4 @@ Functional smoke only; no scientific conclusion.
 }
 Missing thresholds mean not reached; their paired differences stay missing.
 Compare filter_gradient_norm_ratio with actual parameter_update_norm in mechanism_by_seed_layer.csv.
+Mean parameter update norm B/A by seed and layer: adam_scale_B_vs_A.csv.
